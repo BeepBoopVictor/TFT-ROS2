@@ -1,0 +1,75 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="fp3">
+
+  <xacro:include filename="$(find pkg_description)/urdf/common/franka_robot.xacro"/>
+
+  <xacro:arg name="robot_type" default="fp3"/>
+  <xacro:arg name="arm_prefix" default=""/>
+  <xacro:arg name="no_prefix" default="false"/>
+
+  <xacro:arg name="hand" default="true"/>
+  <xacro:arg name="ee_id" default="franka_hand"/>
+  <xacro:arg name="special_connection" default=""/>
+
+  <xacro:arg name="xyz_ee" default="0 0 0"/>
+  <xacro:arg name="rpy_ee" default="0 0 ${-pi/4}"/>
+  <xacro:arg name="tcp_xyz" default="0 0 0.1034"/>
+  <xacro:arg name="tcp_rpy" default="0 0 0"/>
+
+  <xacro:arg name="safety_distance" default="0.03"/>
+  <xacro:arg name="with_sc" default="false"/>
+
+  <xacro:arg name="ros2_control" default="false"/>
+  <xacro:arg name="robot_ip" default=""/>
+  <xacro:arg name="use_fake_hardware" default="false"/>
+  <xacro:arg name="fake_sensor_commands" default="false"/>
+
+  <xacro:arg name="gazebo" default="false"/>
+  <xacro:arg name="gazebo_effort" default="false"/>
+
+  <xacro:arg name="description_pkg" default="pkg_description"/>
+
+  <xacro:arg name="xyz" default="0 0 0"/>
+  <xacro:arg name="rpy" default="0 0 0"/>
+
+  <xacro:property name="prefix" value="$(arg arm_prefix)"/>
+  <xacro:property name="modified_prefix" value="${prefix + '_' if prefix else ''}"/>
+
+  <xacro:if value="$(arg gazebo)">
+    <link name="world"/>
+    <joint name="world_joint" type="fixed">
+      <origin xyz="$(arg xyz)" rpy="$(arg rpy)"/>
+      <parent link="world"/>
+      <child link="${modified_prefix}$(arg robot_type)_link0"/>
+    </joint>
+  </xacro:if>
+
+  <xacro:franka_robot
+    robot_type="$(arg robot_type)"
+    joint_limits="${xacro.load_yaml('$(find pkg_description)/config/joint_limits.yaml')}"
+    inertials="${xacro.load_yaml('$(find pkg_description)/config/inertials.yaml')}"
+    kinematics="${xacro.load_yaml('$(find pkg_description)/config/kinematics.yaml')}"
+    accelerometer_config="${xacro.load_yaml('$(find pkg_description)/config/accelerometers.yaml')}"
+    dynamics="${xacro.load_yaml('$(find pkg_description)/config/dynamics.yaml')}"
+    gazebo="$(arg gazebo)"
+    hand="$(arg hand)"
+    ee_id="$(arg ee_id)"
+    special_connection="$(arg special_connection)"
+    xyz_ee="$(arg xyz_ee)"
+    rpy_ee="$(arg rpy_ee)"
+    tcp_xyz="$(arg tcp_xyz)"
+    tcp_rpy="$(arg tcp_rpy)"
+    safety_distance="$(arg safety_distance)"
+    with_sc="$(arg with_sc)"
+    ros2_control="$(arg ros2_control)"
+    robot_ip="$(arg robot_ip)"
+    use_fake_hardware="$(arg use_fake_hardware)"
+    fake_sensor_commands="$(arg fake_sensor_commands)"
+    gazebo_effort="$(arg gazebo_effort)"
+    no_prefix="$(arg no_prefix)"
+    arm_prefix="${modified_prefix}"
+    description_pkg="$(arg description_pkg)"
+    connected_to="base">
+  </xacro:franka_robot>
+
+</robot>
