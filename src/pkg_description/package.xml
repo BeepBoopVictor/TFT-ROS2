@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>pkg_description</name>
+  <version>0.1.0</version>
+  <description>
+    Robot description package for the TFG Panda project. It provides the
+    unified robot_description used by RViz, Gazebo, MoveIt and RL nodes.
+  </description>
+
+  <maintainer email="victor@example.com">Victor</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>xacro</depend>
+  <depend>urdf</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>joint_state_publisher</depend>
+  <depend>joint_state_publisher_gui</depend>
+  <depend>rviz2</depend>
+  <depend>tf2_ros</depend>
+
+  <!-- Panda official description -->
+  <depend>franka_description</depend>
+
+  <!-- Needed later by Gazebo/control consumers -->
+  <depend>ros2_control</depend>
+  <depend>ros2_controllers</depend>
+  <depend>controller_manager</depend>
+  <depend>joint_state_broadcaster</depend>
+  <depend>joint_trajectory_controller</depend>
+
+  <exec_depend>ros2launch</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,6 @@
+export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+export TFG_PANDA_WS=/workspace/tfg_panda_ws
+
+alias cb='colcon build --symlink-install'
+alias cs='source /workspace/tfg_panda_ws/install/setup.bash'

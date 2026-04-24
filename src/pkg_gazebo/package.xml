@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>pkg_gazebo</name>
+  <version>0.1.0</version>
+  <description>
+    Gazebo simulation package for the TFG Panda pick and place project.
+    Contains worlds, models, simulation launch files, bridges and spawn/reset scripts.
+  </description>
+
+  <maintainer email="victor@example.com">Victor</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>pkg_description</depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclpy</depend>
+
+  <depend>ros_gz_sim</depend>
+  <depend>ros_gz_bridge</depend>
+  <depend>ros_gz_image</depend>
+
+  <depend>gz_ros2_control</depend>
+  <depend>controller_manager</depend>
+  <depend>ros2_control</depend>
+  <depend>ros2_controllers</depend>
+  <depend>joint_state_broadcaster</depend>
+  <depend>joint_trajectory_controller</depend>
+
+  <depend>robot_state_publisher</depend>
+  <depend>xacro</depend>
+  <depend>tf2_ros</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+
+  <exec_depend>ros2launch</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

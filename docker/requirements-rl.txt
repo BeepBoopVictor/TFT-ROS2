@@ -1,0 +1,14 @@
+torch
+torchvision
+torchaudio
+tianshou
+gymnasium
+tensorboard
+matplotlib
+scipy
+h5py
+imageio
+imageio-ffmpeg
+tqdm
+pyyaml
+pydantic
