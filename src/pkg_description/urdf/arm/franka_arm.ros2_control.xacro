@@ -24,14 +24,21 @@
           <param name="robot_type">${robot_type}</param>
           <param name="prefix">${arm_prefix}</param>
           <xacro:if value="${use_fake_hardware}">
-            <plugin>mock_components/GenericSystem</plugin>
+            <!-- <plugin>mock_components/GenericSystem</plugin> -->
+            <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             <param name="fake_sensor_commands">${fake_sensor_commands}</param>
             <param name="state_following_offset">0.0</param>
           </xacro:if>
 
           <xacro:if value="${gazebo}">
             <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+            <!-- <plugin>ign_ros2_control/IgnitionSystem</plugin> -->
           </xacro:if>
+
+          <xacro:unless value="${gazebo}">
+            <plugin>mock_components/GenericSystem</plugin>
+            <param name="fake_sensor_commands">${fake_sensor_commands}</param>
+          </xacro:unless>
 
           <xacro:if value="${use_fake_hardware == 0 and gazebo == 0}">
             <plugin>franka_hardware/FrankaHardwareInterface</plugin>
@@ -106,13 +113,6 @@
       <xacro:general_purpose_io prefix="joint_4_sign" command_interface="elbow_command" index="1"/>
 
     </ros2_control>
-    <xacro:if value="${gazebo}">
-      <gazebo>
-        <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
-          <parameters>$(find franka_gazebo_bringup)/config/franka_gazebo_controllers.yaml</parameters>
-        </plugin>
-      </gazebo>
-    </xacro:if>
 
   </xacro:macro>
 </robot>

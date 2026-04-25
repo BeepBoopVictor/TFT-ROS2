@@ -13,19 +13,18 @@ install(
     worlds
     models
     config
-    rviz
     scripts
+    rviz
   DESTINATION share/${PROJECT_NAME}
-  OPTIONAL
 )
 
-install(
-  PROGRAMS
-    scripts/spawn_random_object.py
-    scripts/reset_world.py
-    scripts/publish_task_markers.py
+install(PROGRAMS
+    scripts/manual_pick_test.py
+    scripts/command_joint_position.py
+    scripts/command_gripper.py
+    scripts/reset_objects.py
+    scripts/spawn_random_objects.py
   DESTINATION lib/${PROJECT_NAME}
-  OPTIONAL
 )
 
 ament_package()

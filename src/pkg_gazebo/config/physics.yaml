@@ -1,0 +1,21 @@
+physics:
+  engine: ode
+  max_step_size: 0.001
+  real_time_factor: 1.0
+  real_time_update_rate: 1000
+  gravity:
+    x: 0.0
+    y: 0.0
+    z: -9.81
+
+contact:
+  default_kp: 100000.0
+  default_kd: 10.0
+  max_vel: 0.1
+  min_depth: 0.001
+
+friction:
+  cube_mu: 1.4
+  cube_mu2: 1.4
+  conveyor_mu: 1.0
+  conveyor_mu2: 1.0

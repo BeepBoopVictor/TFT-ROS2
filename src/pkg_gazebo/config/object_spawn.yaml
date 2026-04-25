@@ -1,0 +1,49 @@
+objects:
+  red_cube:
+    model: red_cube
+    goal: red_goal
+    color: red
+    default_pose:
+      x: 0.52
+      y: 0.05
+      z: 0.365
+      roll: 0.0
+      pitch: 0.0
+      yaw: 0.0
+    random_spawn:
+      x_min: 0.42
+      x_max: 0.62
+      y_min: -0.09
+      y_max: 0.09
+      z: 0.365
+
+  blue_cube:
+    model: blue_cube
+    goal: blue_goal
+    color: blue
+    default_pose:
+      x: 0.52
+      y: -0.05
+      z: 0.365
+      roll: 0.0
+      pitch: 0.0
+      yaw: 0.0
+    random_spawn:
+      x_min: 0.42
+      x_max: 0.62
+      y_min: -0.09
+      y_max: 0.09
+      z: 0.365
+
+goals:
+  red_goal:
+    pose:
+      x: 0.45
+      y: 0.35
+      z: 0.025
+
+  blue_goal:
+    pose:
+      x: 0.45
+      y: -0.35
+      z: 0.025

@@ -1,0 +1,18 @@
+sensors:
+  camera_front:
+    frame_id: camera_front_link
+    rgb_topic: /camera_front/image
+    depth_topic: /camera_front/depth_image
+    camera_info_topic: /camera_front/camera_info
+
+  robot_state:
+    joint_states_topic: /joint_states
+    tf_topic: /tf
+    tf_static_topic: /tf_static
+
+  task:
+    world_frame: world
+    base_frame: fp3_link0
+    end_effector_frame: fp3_hand_tcp
+    pick_frame: pick_area_frame
+    place_frame: place_area_frame

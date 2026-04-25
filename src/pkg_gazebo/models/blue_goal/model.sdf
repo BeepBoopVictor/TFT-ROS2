@@ -1,0 +1,27 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <model name="blue_goal">
+    <static>true</static>
+
+    <link name="base">
+      <collision name="floor_collision">
+        <geometry>
+          <box>
+            <size>0.22 0.22 0.015</size>
+          </box>
+        </geometry>
+      </collision>
+
+      <visual name="floor_visual">
+        <geometry>
+          <box>
+            <size>0.22 0.22 0.015</size>
+          </box>
+        </geometry>
+        <material>
+          <diffuse>0.0 0.1 1.0 0.35</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

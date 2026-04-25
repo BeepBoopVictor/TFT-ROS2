@@ -3,6 +3,8 @@
 
   <xacro:include filename="$(find pkg_description)/urdf/common/franka_robot.xacro"/>
 
+  <xacro:include filename="$(find pkg_description)/urdf/common/gazebo_plugins.xacro"/>
+
   <xacro:arg name="robot_type" default="fp3"/>
   <xacro:arg name="arm_prefix" default=""/>
   <xacro:arg name="no_prefix" default="false"/>
@@ -71,5 +73,14 @@
     description_pkg="$(arg description_pkg)"
     connected_to="base">
   </xacro:franka_robot>
+
+
+  <xacro:arg
+    name="controllers_file"
+    default="$(find pkg_gazebo)/config/controllers.yaml"/>
+
+  <xacro:if value="$(arg gazebo)">
+    <xacro:fp3_gazebo_plugins controllers_file="$(arg controllers_file)"/>
+  </xacro:if>
 
 </robot>
