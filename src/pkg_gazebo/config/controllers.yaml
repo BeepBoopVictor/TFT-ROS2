@@ -9,7 +9,7 @@ controller_manager:
       type: joint_trajectory_controller/JointTrajectoryController
 
     fp3_hand_controller:
-      type: position_controllers/GripperActionController
+      type: joint_trajectory_controller/JointTrajectoryController
 
 
 joint_state_broadcaster:
@@ -36,40 +36,67 @@ fp3_arm_controller:
       - velocity
 
     allow_partial_joints_goal: false
-    open_loop_control: false
+    open_loop_control: true
     allow_nonzero_velocity_at_trajectory_end: false
 
+    action_monitor_rate: 20.0
+    state_publish_rate: 50.0
+
     constraints:
-      goal_time: 3.0
-      stopped_velocity_tolerance: 0.01
+      goal_time: 0.0
+      stopped_velocity_tolerance: 0.05
 
       fp3_joint1:
-        trajectory: 0.2
-        goal: 0.05
+        trajectory: 0.45
+        goal: 0.20
       fp3_joint2:
-        trajectory: 0.2
-        goal: 0.05
+        trajectory: 0.45
+        goal: 0.20
       fp3_joint3:
-        trajectory: 0.2
-        goal: 0.05
+        trajectory: 0.45
+        goal: 0.20
       fp3_joint4:
-        trajectory: 0.2
-        goal: 0.05
+        trajectory: 0.45
+        goal: 0.20
       fp3_joint5:
-        trajectory: 0.2
-        goal: 0.05
+        trajectory: 0.45
+        goal: 0.20
       fp3_joint6:
-        trajectory: 0.2
-        goal: 0.05
+        trajectory: 0.45
+        goal: 0.20
       fp3_joint7:
-        trajectory: 0.2
-        goal: 0.05
+        trajectory: 0.45
+        goal: 0.20
 
 
 fp3_hand_controller:
   ros__parameters:
-    joint: fp3_finger_joint1
-    goal_tolerance: 0.002
-    max_effort: 70.0
-    stall_velocity_threshold: 0.001
-    stall_timeout: 1.0
+    joints:
+      - fp3_finger_joint1
+      - fp3_finger_joint2
+
+    command_interfaces:
+      - position
+
+    state_interfaces:
+      - position
+      - velocity
+
+    allow_partial_joints_goal: false
+    open_loop_control: true
+    allow_nonzero_velocity_at_trajectory_end: false
+
+    action_monitor_rate: 20.0
+    state_publish_rate: 50.0
+
+    constraints:
+      goal_time: 0.0
+      stopped_velocity_tolerance: 0.05
+
+      fp3_finger_joint1:
+        trajectory: 0.05
+        goal: 0.05
+
+      fp3_finger_joint2:
+        trajectory: 0.05
+        goal: 0.05

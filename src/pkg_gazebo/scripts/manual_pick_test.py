@@ -5,7 +5,7 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from control_msgs.action import FollowJointTrajectory, GripperCommand
+from control_msgs.action import FollowJointTrajectory
 from builtin_interfaces.msg import Duration
 
 
@@ -33,8 +33,8 @@ class ManualPickTester(Node):
 
         self.gripper_client = ActionClient(
             self,
-            GripperCommand,
-            "/fp3_hand_controller/gripper_cmd",
+            FollowJointTrajectory,
+            "/fp3_hand_controller/follow_joint_trajectory"
         )
 
         self.get_logger().info("Esperando action servers...")
@@ -71,13 +71,23 @@ class ManualPickTester(Node):
         self.get_logger().info("Movimiento brazo completado.")
         return True
 
-    def command_gripper(self, width, effort=50.0):
-        goal = GripperCommand.Goal()
-        goal.command.position = float(width)
-        goal.command.max_effort = float(effort)
+    def command_gripper(self, width, effort=None):
+        width = max(0.0, min(0.04, float(width)))
+
+        goal = FollowJointTrajectory.Goal()
+        goal.trajectory.joint_names = [
+            "fp3_finger_joint1",
+            "fp3_finger_joint2",
+        ]
+
+        point = JointTrajectoryPoint()
+        point.positions = [width, width]
+        point.time_from_start = Duration(sec=1, nanosec=0)
+
+        goal.trajectory.points.append(point)
 
         self.get_logger().info(
-            f"Moviendo gripper -> width={width:.4f}, effort={effort:.1f}"
+            f"Moviendo gripper -> finger1={width:.4f}, finger2={width:.4f}"
         )
 
         future = self.gripper_client.send_goal_async(goal)
@@ -85,7 +95,7 @@ class ManualPickTester(Node):
 
         goal_handle = future.result()
         if goal_handle is None or not goal_handle.accepted:
-            self.get_logger().error("Goal de gripper rechazado")
+            self.get_logger().error("Objetivo de gripper rechazado")
             return False
 
         result_future = goal_handle.get_result_async()
