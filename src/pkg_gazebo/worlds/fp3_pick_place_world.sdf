@@ -101,7 +101,8 @@
 
     <model name="camera_top_conveyor">
       <static>true</static>
-      <pose>0.60 0.00 1.20 0 1.5708 0</pose>
+      <!-- <pose>0.60 0.00 1.20 0 1.5708 0</pose> -->
+      <pose>0.40 0.00 1.60 0 1.5708 0</pose>
 
       <link name="link">
         <sensor name="camera_top_conveyor_sensor" type="camera">
@@ -110,7 +111,7 @@
           <topic>/camera_top_conveyor/image</topic>
 
           <camera name="camera_top_conveyor">
-            <horizontal_fov>1.047</horizontal_fov>
+            <horizontal_fov>1.40</horizontal_fov>
             <image>
               <width>424</width>
               <height>240</height>
@@ -132,7 +133,8 @@
 
     <model name="camera_front_conveyor">
       <static>true</static>
-      <pose>1.10 0.00 0.45 0 0.45 3.14159</pose>
+      <!-- <pose>1.10 0.00 0.45 0 0.45 3.14159</pose> -->
+      <pose>1.10 0.00 0.65 0 0.45 3.14159</pose>
 
       <link name="link">
         <sensor name="camera_front_conveyor_sensor" type="camera">
@@ -141,7 +143,7 @@
           <topic>/camera_front_conveyor/image</topic>
 
           <camera name="camera_front_conveyor">
-            <horizontal_fov>1.047</horizontal_fov>
+            <horizontal_fov>1.5708</horizontal_fov>
             <image>
               <width>424</width>
               <height>240</height>
@@ -163,7 +165,7 @@
 
     <model name="camera_cabinet">
       <static>true</static>
-      <pose>1.25 -1.10 0.90 0 0.65 2.35</pose>
+      <pose>1.25 -1.10 1.20 0 0.65 2.35</pose>
 
       <link name="link">
         <sensor name="camera_cabinet_sensor" type="camera">
@@ -172,7 +174,8 @@
           <topic>/camera_cabinet/image</topic>
 
           <camera name="camera_cabinet">
-            <horizontal_fov>1.15</horizontal_fov>
+            <!-- <horizontal_fov>1.15</horizontal_fov> -->
+            <horizontal_fov>1.45</horizontal_fov>
             <image>
               <width>424</width>
               <height>240</height>

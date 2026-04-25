@@ -8,63 +8,56 @@ endif()
 find_package(ament_cmake REQUIRED)
 
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
+
 find_package(moveit_ros_planning_interface REQUIRED)
-find_package(moveit_task_constructor_core REQUIRED)
-find_package(moveit_visual_tools REQUIRED)
 find_package(moveit_msgs REQUIRED)
+
 find_package(geometry_msgs REQUIRED)
-find_package(shape_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
+find_package(control_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
+
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
-include_directories(include)
+add_executable(move_to_xyz src/move_to_xyz.cpp)
+ament_target_dependencies(move_to_xyz
+  rclcpp
+  moveit_ros_planning_interface
+  geometry_msgs
+)
 
-# Nodo futuro para MoveIt Task Constructor.
-# Lo activaremos cuando creemos los .cpp reales.
-#
-# add_executable(mtc_pick_place_node
-#   src/mtc_pick_place_node.cpp
-#   src/task_factory.cpp
-#   src/planning_scene_setup.cpp
-# )
-#
-# ament_target_dependencies(mtc_pick_place_node
-#   rclcpp
-#   moveit_ros_planning_interface
-#   moveit_task_constructor_core
-#   moveit_visual_tools
-#   moveit_msgs
-#   geometry_msgs
-#   shape_msgs
-#   tf2_ros
-#   tf2_geometry_msgs
-# )
-#
-# install(TARGETS
-#   mtc_pick_place_node
-#   DESTINATION lib/${PROJECT_NAME}
-# )
+add_executable(move_to_named_pose src/move_to_named_pose.cpp)
+ament_target_dependencies(move_to_named_pose
+  rclcpp
+  moveit_ros_planning_interface
+)
+
+add_executable(move_gripper src/move_gripper.cpp)
+ament_target_dependencies(move_gripper
+  rclcpp
+  rclcpp_action
+  control_msgs
+  trajectory_msgs
+  builtin_interfaces
+)
+
+install(
+  TARGETS
+    move_to_xyz
+    move_to_named_pose
+    move_gripper
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 install(
   DIRECTORY
     launch
     config
     rviz
-    scenes
-    scripts
-    include
   DESTINATION share/${PROJECT_NAME}
-  OPTIONAL
-)
-
-install(
-  PROGRAMS
-    scripts/generate_dataset.py
-    scripts/capture_episode.py
-    scripts/save_scene_metadata.py
-    scripts/validate_grasp_pipeline.py
-  DESTINATION lib/${PROJECT_NAME}
-  OPTIONAL
 )
 
 ament_package()

@@ -1,0 +1,128 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="fp3">
+
+  <xacro:arg name="robot_type" default="fp3"/>
+  <xacro:arg name="arm_prefix" default=""/>
+
+  <xacro:property name="prefix" value="$(arg arm_prefix)"/>
+  <xacro:property name="modified_prefix" value="${prefix + '_' if prefix else ''}"/>
+  <xacro:property name="r" value="$(arg robot_type)"/>
+  <xacro:property name="p" value="${modified_prefix}"/>
+
+  <!-- ===================== -->
+  <!-- Virtual joint -->
+  <!-- ===================== -->
+
+  <virtual_joint
+    name="world_joint"
+    type="fixed"
+    parent_frame="world"
+    child_link="${p}${r}_link0"/>
+
+  <!-- ===================== -->
+  <!-- Planning groups -->
+  <!-- ===================== -->
+
+  <!-- 
+    Grupo principal.
+    Lo definimos como cadena hasta fp3_hand_tcp para que MoveIt pueda planificar
+    directamente poses XYZ del TCP.
+    Aunque la cadena incluya links fijos, los únicos joints activos siguen siendo
+    fp3_joint1 ... fp3_joint7.
+  -->
+  <group name="arm">
+    <chain base_link="${p}${r}_link0" tip_link="${p}${r}_hand_tcp"/>
+  </group>
+
+  <group name="hand">
+    <joint name="${p}${r}_finger_joint1"/>
+    <joint name="${p}${r}_finger_joint2"/>
+  </group>
+
+  <!-- ===================== -->
+  <!-- End effector -->
+  <!-- ===================== -->
+
+  <end_effector
+    name="fp3_hand"
+    parent_link="${p}${r}_link8"
+    group="hand"
+    parent_group="arm"/>
+
+  <!-- ===================== -->
+  <!-- Named states -->
+  <!-- ===================== -->
+
+  <group_state name="home" group="arm">
+    <joint name="${p}${r}_joint1" value="0.0"/>
+    <joint name="${p}${r}_joint2" value="-0.785398"/>
+    <joint name="${p}${r}_joint3" value="0.0"/>
+    <joint name="${p}${r}_joint4" value="-2.35619"/>
+    <joint name="${p}${r}_joint5" value="0.0"/>
+    <joint name="${p}${r}_joint6" value="1.5708"/>
+    <joint name="${p}${r}_joint7" value="0.785398"/>
+  </group_state>
+
+  <group_state name="ready" group="arm">
+    <joint name="${p}${r}_joint1" value="0.0"/>
+    <joint name="${p}${r}_joint2" value="-0.55"/>
+    <joint name="${p}${r}_joint3" value="0.0"/>
+    <joint name="${p}${r}_joint4" value="-2.20"/>
+    <joint name="${p}${r}_joint5" value="0.0"/>
+    <joint name="${p}${r}_joint6" value="1.85"/>
+    <joint name="${p}${r}_joint7" value="0.785398"/>
+  </group_state>
+
+  <group_state name="open" group="hand">
+    <joint name="${p}${r}_finger_joint1" value="0.04"/>
+    <joint name="${p}${r}_finger_joint2" value="0.04"/>
+  </group_state>
+
+  <group_state name="grasp_cube" group="hand">
+    <joint name="${p}${r}_finger_joint1" value="0.022"/>
+    <joint name="${p}${r}_finger_joint2" value="0.022"/>
+  </group_state>
+
+  <!-- ===================== -->
+  <!-- Self-collision matrix -->
+  <!-- ===================== -->
+
+  <!-- Brazo: adyacentes -->
+  <disable_collisions link1="${p}${r}_link0" link2="${p}${r}_link1" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_link1" link2="${p}${r}_link2" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_link2" link2="${p}${r}_link3" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_link3" link2="${p}${r}_link4" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_link4" link2="${p}${r}_link5" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_link5" link2="${p}${r}_link6" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_link6" link2="${p}${r}_link7" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_link7" link2="${p}${r}_link8" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_link8" link2="${p}${r}_hand" reason="Adjacent"/>
+
+  <!-- Brazo: pares cercanos habituales en Franka -->
+  <disable_collisions link1="${p}${r}_link0" link2="${p}${r}_link2" reason="Never"/>
+  <disable_collisions link1="${p}${r}_link1" link2="${p}${r}_link3" reason="Never"/>
+  <disable_collisions link1="${p}${r}_link2" link2="${p}${r}_link4" reason="Never"/>
+  <disable_collisions link1="${p}${r}_link3" link2="${p}${r}_link5" reason="Never"/>
+  <disable_collisions link1="${p}${r}_link4" link2="${p}${r}_link6" reason="Never"/>
+  <disable_collisions link1="${p}${r}_link5" link2="${p}${r}_link7" reason="Never"/>
+
+  <!-- Muñeca / mano -->
+  <disable_collisions link1="${p}${r}_link6" link2="${p}${r}_hand" reason="Never"/>
+  <disable_collisions link1="${p}${r}_link7" link2="${p}${r}_hand" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_link7" link2="${p}${r}_leftfinger" reason="Never"/>
+  <disable_collisions link1="${p}${r}_link7" link2="${p}${r}_rightfinger" reason="Never"/>
+  <disable_collisions link1="${p}${r}_link8" link2="${p}${r}_leftfinger" reason="Never"/>
+  <disable_collisions link1="${p}${r}_link8" link2="${p}${r}_rightfinger" reason="Never"/>
+
+  <!-- Dedos -->
+  <disable_collisions link1="${p}${r}_hand" link2="${p}${r}_leftfinger" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_hand" link2="${p}${r}_rightfinger" reason="Adjacent"/>
+  <disable_collisions link1="${p}${r}_leftfinger" link2="${p}${r}_rightfinger" reason="Never"/>
+
+  <!-- TCP virtual -->
+  <disable_collisions link1="${p}${r}_hand_tcp" link2="${p}${r}_link8" reason="Fixed"/>
+  <disable_collisions link1="${p}${r}_hand_tcp" link2="${p}${r}_hand" reason="Fixed"/>
+  <disable_collisions link1="${p}${r}_hand_tcp" link2="${p}${r}_leftfinger" reason="Fixed"/>
+  <disable_collisions link1="${p}${r}_hand_tcp" link2="${p}${r}_rightfinger" reason="Fixed"/>
+
+</robot>

@@ -1,0 +1,7 @@
+trajectory_execution:
+  allowed_execution_duration_scaling: 2.0
+  allowed_goal_duration_margin: 2.0
+  allowed_start_tolerance: 0.05
+  execution_duration_monitoring: true
+
+moveit_manage_controllers: false
