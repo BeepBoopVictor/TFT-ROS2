@@ -76,6 +76,10 @@
       </link>
     </model>
 
+    <!-- ===================== -->
+    <!-- Escena principal -->
+    <!-- ===================== -->
+
     <include>
       <uri>model://conveyor</uri>
       <pose>0.60 0.00 0.00 0 0 1.5708</pose>
@@ -90,6 +94,99 @@
       <uri>model://blue_goal</uri>
       <pose>0.00 -0.55 0.025 0 0 0</pose>
     </include>
+
+    <!-- ===================== -->
+    <!-- Cámara 1: cenital sobre cinta -->
+    <!-- ===================== -->
+
+    <model name="camera_top_conveyor">
+      <static>true</static>
+      <pose>0.60 0.00 1.20 0 1.5708 0</pose>
+
+      <link name="link">
+        <sensor name="camera_top_conveyor_sensor" type="camera">
+          <always_on>false</always_on>
+          <update_rate>15</update_rate>
+          <topic>/camera_top_conveyor/image</topic>
+
+          <camera name="camera_top_conveyor">
+            <horizontal_fov>1.047</horizontal_fov>
+            <image>
+              <width>424</width>
+              <height>240</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.02</near>
+              <far>5.0</far>
+            </clip>
+            <camera_info_topic>/camera_top_conveyor/camera_info</camera_info_topic>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <!-- ===================== -->
+    <!-- Cámara 2: final de cinta, perpendicular -->
+    <!-- ===================== -->
+
+    <model name="camera_front_conveyor">
+      <static>true</static>
+      <pose>1.10 0.00 0.45 0 0.45 3.14159</pose>
+
+      <link name="link">
+        <sensor name="camera_front_conveyor_sensor" type="camera">
+          <always_on>false</always_on>
+          <update_rate>15</update_rate>
+          <topic>/camera_front_conveyor/image</topic>
+
+          <camera name="camera_front_conveyor">
+            <horizontal_fov>1.047</horizontal_fov>
+            <image>
+              <width>424</width>
+              <height>240</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.02</near>
+              <far>5.0</far>
+            </clip>
+            <camera_info_topic>/camera_front_conveyor/camera_info</camera_info_topic>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <!-- ===================== -->
+    <!-- Cámara 3: vista caballera / tres cuartos -->
+    <!-- ===================== -->
+
+    <model name="camera_cabinet">
+      <static>true</static>
+      <pose>1.25 -1.10 0.90 0 0.65 2.35</pose>
+
+      <link name="link">
+        <sensor name="camera_cabinet_sensor" type="camera">
+          <always_on>false</always_on>
+          <update_rate>15</update_rate>
+          <topic>/camera_cabinet/image</topic>
+
+          <camera name="camera_cabinet">
+            <horizontal_fov>1.15</horizontal_fov>
+            <image>
+              <width>424</width>
+              <height>240</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.02</near>
+              <far>6.0</far>
+            </clip>
+            <camera_info_topic>/camera_cabinet/camera_info</camera_info_topic>
+          </camera>
+        </sensor>
+      </link>
+    </model>
 
   </world>
 </sdf>

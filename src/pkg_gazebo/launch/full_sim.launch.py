@@ -1,30 +1,43 @@
-from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
-from launch_ros.substitutions import FindPackageShare
 import os
+from pathlib import Path
+
+from ament_index_python.packages import get_package_share_directory
+
+from launch import LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    SetEnvironmentVariable,
+    TimerAction,
+)
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
-    pkg_gazebo = FindPackageShare("pkg_gazebo")
+    pkg_gazebo_share = get_package_share_directory("pkg_gazebo")
+    pkg_description_share = get_package_share_directory("pkg_description")
 
-    pkg_description = FindPackageShare("pkg_description")
+    gui = LaunchConfiguration("gui")
+    camera = LaunchConfiguration("camera")
+    view_camera = LaunchConfiguration("view_camera")
 
-    models_path = [
-        PathJoinSubstitution([pkg_gazebo, "models"]),
-        os.pathsep,
-        PathJoinSubstitution([pkg_description, ".."]),
-    ]
+    gazebo_models_path = os.path.join(pkg_gazebo_share, "models")
+    ros_share_path = str(Path(pkg_description_share).parent)
+
+    resource_path = os.pathsep.join([
+        gazebo_models_path,
+        ros_share_path,
+    ])
 
     sim_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([
-                pkg_gazebo,
-                "launch",
-                "sim.launch.py",
-            ])
-        )
+            os.path.join(pkg_gazebo_share, "launch", "sim.launch.py")
+        ),
+        launch_arguments={
+            "gui": gui,
+        }.items(),
     )
 
     bridge_launch = TimerAction(
@@ -32,12 +45,11 @@ def generate_launch_description():
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    PathJoinSubstitution([
-                        pkg_gazebo,
-                        "launch",
-                        "bridge.launch.py",
-                    ])
-                )
+                    os.path.join(pkg_gazebo_share, "launch", "bridge.launch.py")
+                ),
+                launch_arguments={
+                    "camera": camera,
+                }.items(),
             )
         ],
     )
@@ -47,11 +59,7 @@ def generate_launch_description():
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    PathJoinSubstitution([
-                        pkg_gazebo,
-                        "launch",
-                        "spawn_robot.launch.py",
-                    ])
+                    os.path.join(pkg_gazebo_share, "launch", "spawn_robot.launch.py")
                 )
             )
         ],
@@ -62,23 +70,54 @@ def generate_launch_description():
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    PathJoinSubstitution([
-                        pkg_gazebo,
-                        "launch",
-                        "spawn_objects.launch.py",
-                    ])
+                    os.path.join(pkg_gazebo_share, "launch", "spawn_objects.launch.py")
                 )
             )
         ],
     )
 
+    view_camera_launch = TimerAction(
+        period=9.0,
+        condition=IfCondition(view_camera),
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(pkg_gazebo_share, "launch", "view_camera.launch.py")
+                ),
+                launch_arguments={
+                    "camera": camera,
+                }.items(),
+            )
+        ],
+    )
+
     return LaunchDescription([
+        DeclareLaunchArgument(
+            "gui",
+            default_value="true",
+            description="Launch Gazebo GUI: true/false",
+        ),
+
+        DeclareLaunchArgument(
+            "camera",
+            default_value="cabinet",
+            description="Camera to bridge/view: top, front, cabinet, all, none",
+        ),
+
+        DeclareLaunchArgument(
+            "view_camera",
+            default_value="false",
+            description="Open one rqt_image_view window for selected camera",
+        ),
+
         SetEnvironmentVariable(
             name="IGN_GAZEBO_RESOURCE_PATH",
-            value=models_path,
+            value=resource_path,
         ),
+
         sim_launch,
         bridge_launch,
         spawn_robot_launch,
         spawn_objects_launch,
+        view_camera_launch,
     ])
