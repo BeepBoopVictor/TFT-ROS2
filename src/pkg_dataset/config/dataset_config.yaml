@@ -1,0 +1,49 @@
+dataset:
+  root_dir: "/root/tfg_panda_ws/datasets/fp3_pick_place_v1"
+  sample_hz: 5.0
+  image_format: "png"
+
+camera:
+  rgb_topic: "/camera_cabinet/image"
+  camera_name: "camera_cabinet"
+
+robot:
+  planning_frame: "world"
+  tcp_frame: "fp3_hand_tcp"
+
+  # Quaternion confirmado por ti para pinza mirando hacia abajo.
+  grasp_down_quat:
+    qx: 1.0
+    qy: 0.0
+    qz: 0.0
+    qw: 0.0
+
+gripper:
+  open_width: 0.040
+  grasp_width: 0.022
+  safe_min_width: 0.003
+  command_duration: 2.0
+
+scene:
+  conveyor_length: 2.80
+
+  # Ajusta estas posiciones si cambias el mundo.
+  # z_grasp debe ser la altura realista para entrar al cubo con la pinza.
+  red_cube:
+    color: "red"
+    pick_xyz: [0.60, 0.18, 0.24]
+    goal_xyz: [0.05, 0.55, 0.24]
+
+  blue_cube:
+    color: "blue"
+    pick_xyz: [0.60, -0.18, 0.24]
+    goal_xyz: [0.05, -0.55, 0.24]
+
+motion:
+  pregrasp_z: 0.38
+  lift_z: 0.46
+  preplace_z: 0.38
+  retreat_z: 0.46
+
+  settle_after_motion_sec: 0.5
+  settle_after_gripper_sec: 0.8
