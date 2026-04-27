@@ -202,6 +202,11 @@ class PickPlaceDatasetRecorder(Node):
     def move_xyz(self, x: float, y: float, z: float, phase: str) -> bool:
         q = self.config["robot"]["grasp_down_quat"]
 
+        qx = float(q["qx"])
+        qy = float(q["qy"])
+        qz = float(q["qz"])
+        qw = float(q["qw"])
+
         command = [
             "ros2",
             "launch",
@@ -210,21 +215,16 @@ class PickPlaceDatasetRecorder(Node):
             f"x:={x:.5f}",
             f"y:={y:.5f}",
             f"z:={z:.5f}",
-            f"qx:={float(q['qx']):.6f}",
-            f"qy:={float(q['qy']):.6f}",
-            f"qz:={float(q['qz']):.6f}",
-            f"qw:={float(q['qw']):.6f}",
+            f"qx:={qx:.6f}",
+            f"qy:={qy:.6f}",
+            f"qz:={qz:.6f}",
+            f"qw:={qw:.6f}",
         ]
 
         action = {
-            "type": "move_xyz",
+            "type": "move_xyz_grasp_down",
             "target_xyz": [x, y, z],
-            "target_quat": [
-                float(q["qx"]),
-                float(q["qy"]),
-                float(q["qz"]),
-                float(q["qw"]),
-            ],
+            "target_quat": [qx, qy, qz, qw],
         }
 
         ok = self.run_shell_command(command, phase, action)
@@ -285,16 +285,81 @@ class PickPlaceDatasetRecorder(Node):
         self.recording = True
 
         try:
+            # sequence = [
+            #     lambda: self.move_gripper(open_width, "open_gripper_initial"),
+            #     lambda: self.move_xyz(pick_x, pick_y, pregrasp_z, "approach_pregrasp"),
+            #     lambda: self.move_xyz(pick_x, pick_y, pick_z, "descend_to_grasp"),
+            #     lambda: self.move_gripper(grasp_width, "close_gripper_grasp"),
+            #     lambda: self.move_xyz(pick_x, pick_y, lift_z, "lift_object"),
+            #     lambda: self.move_xyz(goal_x, goal_y, preplace_z, "move_to_goal_preplace"),
+            #     lambda: self.move_xyz(goal_x, goal_y, goal_z, "descend_to_place"),
+            #     lambda: self.move_gripper(open_width, "open_gripper_release"),
+            #     lambda: self.move_xyz(goal_x, goal_y, retreat_z, "retreat_after_place"),
+            # ]
+
             sequence = [
+                # 1. Abrir pinza antes de ir hacia el cubo.
                 lambda: self.move_gripper(open_width, "open_gripper_initial"),
-                lambda: self.move_xyz(pick_x, pick_y, pregrasp_z, "approach_pregrasp"),
-                lambda: self.move_xyz(pick_x, pick_y, pick_z, "descend_to_grasp"),
-                lambda: self.move_gripper(grasp_width, "close_gripper_grasp"),
-                lambda: self.move_xyz(pick_x, pick_y, lift_z, "lift_object"),
-                lambda: self.move_xyz(goal_x, goal_y, preplace_z, "move_to_goal_preplace"),
-                lambda: self.move_xyz(goal_x, goal_y, goal_z, "descend_to_place"),
-                lambda: self.move_gripper(open_width, "open_gripper_release"),
-                lambda: self.move_xyz(goal_x, goal_y, retreat_z, "retreat_after_place"),
+
+                # 2. Ir encima del cubo con orientación fija hacia abajo.
+                lambda: self.move_xyz(
+                    pick_x,
+                    pick_y,
+                    pregrasp_z,
+                    "approach_pregrasp_down"
+                ),
+
+                # 3. Bajar en la misma vertical, manteniendo la orientación fija.
+                lambda: self.move_xyz(
+                    pick_x,
+                    pick_y,
+                    pick_z,
+                    "descend_to_grasp_down"
+                ),
+
+                # 4. Cerrar pinza sólo cuando ya está a la altura de agarre.
+                lambda: self.move_gripper(
+                    grasp_width,
+                    "close_gripper_on_cube"
+                ),
+
+                # 5. Levantar el objeto sin cambiar la orientación.
+                lambda: self.move_xyz(
+                    pick_x,
+                    pick_y,
+                    lift_z,
+                    "lift_object_down"
+                ),
+
+                # 6. Mover hacia encima del goal manteniendo orientación.
+                lambda: self.move_xyz(
+                    goal_x,
+                    goal_y,
+                    preplace_z,
+                    "move_to_goal_preplace_down"
+                ),
+
+                # 7. Bajar al goal.
+                lambda: self.move_xyz(
+                    goal_x,
+                    goal_y,
+                    goal_z,
+                    "descend_to_place_down"
+                ),
+
+                # 8. Soltar.
+                lambda: self.move_gripper(
+                    open_width,
+                    "open_gripper_release"
+                ),
+
+                # 9. Retirada vertical.
+                lambda: self.move_xyz(
+                    goal_x,
+                    goal_y,
+                    retreat_z,
+                    "retreat_after_place_down"
+                ),
             ]
 
             for step_fn in sequence:

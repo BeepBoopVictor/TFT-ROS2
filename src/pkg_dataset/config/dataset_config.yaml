@@ -19,8 +19,8 @@ robot:
     qw: 0.0
 
 gripper:
-  open_width: 0.040
-  grasp_width: 0.022
+  open_width: 0.039
+  grasp_width: 0.010
   safe_min_width: 0.003
   command_duration: 2.0
 
@@ -31,19 +31,19 @@ scene:
   # z_grasp debe ser la altura realista para entrar al cubo con la pinza.
   red_cube:
     color: "red"
-    pick_xyz: [0.60, 0.18, 0.24]
-    goal_xyz: [0.05, 0.55, 0.24]
+    pick_xyz: [0.60, 0.18, 0.23]
+    goal_xyz: [0.05, 0.55, 0.23]
 
   blue_cube:
     color: "blue"
-    pick_xyz: [0.60, -0.18, 0.24]
-    goal_xyz: [0.05, -0.55, 0.24]
+    pick_xyz: [0.60, -0.18, 0.23]
+    goal_xyz: [0.05, -0.55, 0.23]
 
 motion:
-  pregrasp_z: 0.38
-  lift_z: 0.46
-  preplace_z: 0.38
-  retreat_z: 0.46
+  pregrasp_z: 0.40
+  lift_z: 0.48
+  preplace_z: 0.40
+  retreat_z: 0.48
 
   settle_after_motion_sec: 0.5
   settle_after_gripper_sec: 0.8

@@ -22,6 +22,12 @@ def generate_launch_description():
     x = LaunchConfiguration("x")
     y = LaunchConfiguration("y")
     z = LaunchConfiguration("z")
+
+    qx = LaunchConfiguration("qx")
+    qy = LaunchConfiguration("qy")
+    qz = LaunchConfiguration("qz")
+    qw = LaunchConfiguration("qw")
+
     use_sim_time = LaunchConfiguration("use_sim_time")
 
     pkg_description = get_package_share_directory("pkg_description")
@@ -95,13 +101,23 @@ def generate_launch_description():
         executable="move_to_xyz",
         name="move_to_xyz",
         output="screen",
-        arguments=[x, y, z],
+        arguments=[
+            x,
+            y,
+            z,
+            qx,
+            qy,
+            qz,
+            qw,
+        ],
         parameters=[
             robot_description,
             robot_description_semantic,
             robot_description_kinematics,
             robot_description_planning,
-            {"use_sim_time": use_sim_time},
+            {
+                "use_sim_time": use_sim_time,
+            },
         ],
     )
 
@@ -109,6 +125,11 @@ def generate_launch_description():
         DeclareLaunchArgument("x", default_value="0.45"),
         DeclareLaunchArgument("y", default_value="0.00"),
         DeclareLaunchArgument("z", default_value="0.55"),
+
+        DeclareLaunchArgument("qx", default_value="keep"),
+        DeclareLaunchArgument("qy", default_value="keep"),
+        DeclareLaunchArgument("qz", default_value="keep"),
+        DeclareLaunchArgument("qw", default_value="keep"),
 
         DeclareLaunchArgument(
             "use_sim_time",

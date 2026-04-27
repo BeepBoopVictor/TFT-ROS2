@@ -1,5 +1,4 @@
-#include <chrono>
-#include <cstdlib>
+#include <cmath>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -10,6 +9,7 @@
 #include <geometry_msgs/msg/pose.hpp>
 
 #include <moveit/move_group_interface/move_group_interface.h>
+
 
 static double parse_double(const std::string & value, const std::string & name)
 {
@@ -27,6 +27,27 @@ static double parse_double(const std::string & value, const std::string & name)
   }
 }
 
+
+static void normalize_quaternion(geometry_msgs::msg::Quaternion & q)
+{
+  const double norm = std::sqrt(
+    q.x * q.x +
+    q.y * q.y +
+    q.z * q.z +
+    q.w * q.w
+  );
+
+  if (norm < 1e-9) {
+    throw std::runtime_error("Quaternion norm is zero.");
+  }
+
+  q.x /= norm;
+  q.y /= norm;
+  q.z /= norm;
+  q.w /= norm;
+}
+
+
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
@@ -38,24 +59,18 @@ int main(int argc, char ** argv)
 
   std::vector<std::string> args = rclcpp::remove_ros_arguments(argc, argv);
 
-  // args[0] es el nombre del ejecutable.
-  // args válidos:
-  //   move_to_xyz X Y Z
-  //   move_to_xyz X Y Z qx qy qz qw
   if (args.size() != 4 && args.size() != 8) {
     RCLCPP_ERROR(
       node->get_logger(),
-      "Uso: ros2 launch pkg_moveit_config demo_xyz.launch.py x:=0.45 y:=0.00 z:=0.55"
-    );
-    RCLCPP_ERROR(
-      node->get_logger(),
-      "O directo con parámetros cargados: move_to_xyz X Y Z [qx qy qz qw]"
+      "Uso: move_to_xyz X Y Z [qx qy qz qw]"
     );
     rclcpp::shutdown();
     return 1;
   }
 
-  double x, y, z;
+  double x;
+  double y;
+  double z;
 
   try {
     x = parse_double(args[1], "x");
@@ -76,36 +91,64 @@ int main(int argc, char ** argv)
 
   try {
     static const std::string PLANNING_GROUP = "arm";
+    static const std::string PLANNING_FRAME = "world";
+    static const std::string TCP_LINK = "fp3_hand_tcp";
 
     moveit::planning_interface::MoveGroupInterface move_group(
       node,
       PLANNING_GROUP
     );
 
-    move_group.setPoseReferenceFrame("world");
-    move_group.setEndEffectorLink("fp3_hand_tcp");
+    move_group.setPoseReferenceFrame(PLANNING_FRAME);
+    move_group.setEndEffectorLink(TCP_LINK);
 
-    move_group.setPlanningTime(8.0);
-    move_group.setNumPlanningAttempts(10);
-    move_group.setMaxVelocityScalingFactor(0.20);
-    move_group.setMaxAccelerationScalingFactor(0.20);
+    move_group.setStartStateToCurrentState();
 
-    auto current_pose = move_group.getCurrentPose("fp3_hand_tcp");
+    move_group.setPlannerId("RRTConnect");
+    move_group.setPlanningTime(15.0);
+    move_group.setNumPlanningAttempts(30);
+
+    move_group.setMaxVelocityScalingFactor(0.15);
+    move_group.setMaxAccelerationScalingFactor(0.15);
+
+    move_group.setGoalPositionTolerance(0.008);
+    move_group.setGoalOrientationTolerance(0.08);
+    move_group.setGoalJointTolerance(0.02);
+
+    auto current_pose = move_group.getCurrentPose(TCP_LINK);
 
     geometry_msgs::msg::Pose target_pose;
     target_pose.position.x = x;
     target_pose.position.y = y;
     target_pose.position.z = z;
 
-    if (args.size() == 8) {
+    const bool fixed_orientation_requested =
+      args.size() == 8 &&
+      args[4] != "keep" &&
+      args[5] != "keep" &&
+      args[6] != "keep" &&
+      args[7] != "keep";
+
+    if (fixed_orientation_requested) {
       target_pose.orientation.x = parse_double(args[4], "qx");
       target_pose.orientation.y = parse_double(args[5], "qy");
       target_pose.orientation.z = parse_double(args[6], "qz");
       target_pose.orientation.w = parse_double(args[7], "qw");
+
+      normalize_quaternion(target_pose.orientation);
+
+      RCLCPP_INFO(
+        node->get_logger(),
+        "Orientación final fija activada para %s.",
+        TCP_LINK.c_str()
+      );
     } else {
-      // Mantiene la orientación actual del TCP.
-      // Esto hace que el test XYZ sea más estable al principio.
       target_pose.orientation = current_pose.pose.orientation;
+
+      RCLCPP_WARN(
+        node->get_logger(),
+        "No se pasó quaternion fijo. Se mantiene la orientación actual."
+      );
     }
 
     RCLCPP_INFO(
@@ -118,22 +161,26 @@ int main(int argc, char ** argv)
 
     RCLCPP_INFO(
       node->get_logger(),
-      "Orientación objetivo: qx=%.4f qy=%.4f qz=%.4f qw=%.4f",
+      "Quaternion objetivo: qx=%.4f qy=%.4f qz=%.4f qw=%.4f",
       target_pose.orientation.x,
       target_pose.orientation.y,
       target_pose.orientation.z,
       target_pose.orientation.w
     );
 
-    move_group.setPoseTarget(target_pose, "fp3_hand_tcp");
+    move_group.clearPoseTargets();
+    move_group.clearPathConstraints();
+
+    move_group.setPoseTarget(target_pose, TCP_LINK);
 
     moveit::planning_interface::MoveGroupInterface::Plan plan;
-
     const auto plan_result = move_group.plan(plan);
 
     if (plan_result != moveit::core::MoveItErrorCode::SUCCESS) {
       RCLCPP_ERROR(node->get_logger(), "La planificación ha fallado.");
+
       move_group.clearPoseTargets();
+      move_group.clearPathConstraints();
 
       executor.cancel();
       if (spinner.joinable()) {
@@ -150,7 +197,9 @@ int main(int argc, char ** argv)
 
     if (exec_result != moveit::core::MoveItErrorCode::SUCCESS) {
       RCLCPP_ERROR(node->get_logger(), "La ejecución ha fallado.");
+
       move_group.clearPoseTargets();
+      move_group.clearPathConstraints();
 
       executor.cancel();
       if (spinner.joinable()) {
@@ -161,9 +210,24 @@ int main(int argc, char ** argv)
       return 3;
     }
 
+    auto final_pose = move_group.getCurrentPose(TCP_LINK);
+
+    RCLCPP_INFO(
+      node->get_logger(),
+      "Pose final TCP: x=%.4f y=%.4f z=%.4f | qx=%.4f qy=%.4f qz=%.4f qw=%.4f",
+      final_pose.pose.position.x,
+      final_pose.pose.position.y,
+      final_pose.pose.position.z,
+      final_pose.pose.orientation.x,
+      final_pose.pose.orientation.y,
+      final_pose.pose.orientation.z,
+      final_pose.pose.orientation.w
+    );
+
     RCLCPP_INFO(node->get_logger(), "Ejecución completada correctamente.");
 
     move_group.clearPoseTargets();
+    move_group.clearPathConstraints();
 
   } catch (const std::exception & e) {
     RCLCPP_FATAL(node->get_logger(), "Excepción en move_to_xyz: %s", e.what());
