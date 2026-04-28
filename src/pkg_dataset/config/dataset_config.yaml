@@ -1,5 +1,5 @@
 dataset:
-  root_dir: "/root/tfg_panda_ws/datasets/fp3_pick_place_v1"
+  root_dir: "/root/tfg_panda_ws/datasets/fp3_pick_place_v3"
   sample_hz: 5.0
   image_format: "png"
 
@@ -7,11 +7,30 @@ camera:
   rgb_topic: "/camera_cabinet/image"
   camera_name: "camera_cabinet"
 
+gazebo:
+  world_name: "fp3_pick_place_world"
+  red_cube_entity: "red_cube"
+  blue_cube_entity: "blue_cube"
+  hidden_xyz: [2.0, 2.0, 0.50]
+  settle_after_reset_sec: 1.0
+
 robot:
   planning_frame: "world"
   tcp_frame: "fp3_hand_tcp"
 
-  # Quaternion confirmado por ti para pinza mirando hacia abajo.
+  arm_joints:
+    - fp3_joint1
+    - fp3_joint2
+    - fp3_joint3
+    - fp3_joint4
+    - fp3_joint5
+    - fp3_joint6
+    - fp3_joint7
+
+  gripper_joints:
+    - fp3_finger_joint1
+    - fp3_finger_joint2
+
   grasp_down_quat:
     qx: 1.0
     qy: 0.0
@@ -27,17 +46,30 @@ gripper:
 scene:
   conveyor_length: 2.80
 
-  # Ajusta estas posiciones si cambias el mundo.
-  # z_grasp debe ser la altura realista para entrar al cubo con la pinza.
   red_cube:
     color: "red"
-    pick_xyz: [0.60, 0.18, 0.23]
+    default_pick_xyz: [0.60, 0.18, 0.23]
     goal_xyz: [0.05, 0.55, 0.23]
 
   blue_cube:
     color: "blue"
-    pick_xyz: [0.60, -0.18, 0.23]
+    default_pick_xyz: [0.60, -0.18, 0.23]
     goal_xyz: [0.05, -0.55, 0.23]
+
+randomization:
+  enabled: true
+
+  # Zona segura inicial dentro de la cinta larga.
+  # Más adelante podemos ampliar x_min/x_max usando todo el largo de 2.80.
+  conveyor_spawn:
+    x_min: 0.48
+    x_max: 0.72
+    y_min: -0.22
+    y_max: 0.22
+    z: 0.24
+
+  probability_two_cubes: 0.35
+  min_cube_distance_xy: 0.18
 
 motion:
   pregrasp_z: 0.40
@@ -47,3 +79,12 @@ motion:
 
   settle_after_motion_sec: 0.5
   settle_after_gripper_sec: 0.8
+
+validation:
+  enabled: true
+  goal_tolerance_xy: 0.12
+  goal_tolerance_z: 0.18
+  require_pose_query: false
+
+recording:
+  keep_failed_episodes: true
