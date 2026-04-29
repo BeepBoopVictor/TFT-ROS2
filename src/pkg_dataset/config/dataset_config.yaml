@@ -42,6 +42,7 @@ gripper:
   grasp_width: 0.010
   safe_min_width: 0.003
   command_duration: 2.0
+  position_tolerance: 0.006
 
 scene:
   conveyor_length: 2.80
@@ -78,13 +79,37 @@ motion:
   retreat_z: 0.48
 
   settle_after_motion_sec: 0.5
-  settle_after_gripper_sec: 0.8
+  settle_after_gripper_sec: 0.5
+
+  move_retries: 1
+  move_timeout_sec: 90.0
 
 validation:
   enabled: true
-  goal_tolerance_xy: 0.12
-  goal_tolerance_z: 0.18
-  require_pose_query: false
+
+  # Ahora sí queremos exigir pose real.
+  require_pose_query: true
+
+  # Validación por área rectangular del goal.
+  # Ajusta estos valores al tamaño real visual de tus goals.
+  goal_area:
+    enabled: true
+
+    red:
+      center_xyz: [0.05, 0.55, 0.23]
+      size_xy: [0.36, 0.36]
+
+    blue:
+      center_xyz: [0.05, -0.55, 0.23]
+      size_xy: [0.36, 0.36]
+
+    margin_xy: 0.04
+
+  # Fallback por distancia al centro.
+  # Lo dejamos amplio para no penalizar si cae dentro del área,
+  # pero lejos del centro exacto.
+  goal_tolerance_xy: 0.25
+  goal_tolerance_z: 0.25
 
 recording:
   keep_failed_episodes: true

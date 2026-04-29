@@ -22,6 +22,7 @@ def generate_launch_description():
     gui = LaunchConfiguration("gui")
     camera = LaunchConfiguration("camera")
     view_camera = LaunchConfiguration("view_camera")
+    world_name = LaunchConfiguration("world_name")
 
     gazebo_models_path = os.path.join(pkg_gazebo_share, "models")
     ros_share_path = str(Path(pkg_description_share).parent)
@@ -37,11 +38,12 @@ def generate_launch_description():
         ),
         launch_arguments={
             "gui": gui,
+            "world_name": world_name,
         }.items(),
     )
 
     bridge_launch = TimerAction(
-        period=1.0,
+        period=2.0,
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
@@ -55,29 +57,35 @@ def generate_launch_description():
     )
 
     spawn_robot_launch = TimerAction(
-        period=2.0,
+        period=5.0,
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(pkg_gazebo_share, "launch", "spawn_robot.launch.py")
-                )
+                ),
+                launch_arguments={
+                    "world_name": world_name,
+                }.items(),
             )
         ],
     )
 
     spawn_objects_launch = TimerAction(
-        period=7.0,
+        period=10.0,
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(pkg_gazebo_share, "launch", "spawn_objects.launch.py")
-                )
+                ),
+                launch_arguments={
+                    "world_name": world_name,
+                }.items(),
             )
         ],
     )
 
     view_camera_launch = TimerAction(
-        period=9.0,
+        period=12.0,
         condition=IfCondition(view_camera),
         actions=[
             IncludeLaunchDescription(
@@ -108,6 +116,12 @@ def generate_launch_description():
             "view_camera",
             default_value="false",
             description="Open one rqt_image_view window for selected camera",
+        ),
+
+        DeclareLaunchArgument(
+            "world_name",
+            default_value="fp3_pick_place_world",
+            description="Gazebo world name",
         ),
 
         SetEnvironmentVariable(

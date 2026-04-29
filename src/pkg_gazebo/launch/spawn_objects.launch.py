@@ -1,17 +1,11 @@
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    # Conveyor:
-    # pose z = 0.00
-    # altura = 0.20
-    # superficie superior = 0.20
-    #
-    # Cubo:
-    # tamaño aprox = 0.05
-    # centro sobre cinta = 0.20 + 0.025 = 0.225
-    # usamos 0.24 para evitar interpenetración inicial
+    world_name = LaunchConfiguration("world_name")
 
     spawn_red_cube = Node(
         package="ros_gz_sim",
@@ -19,6 +13,7 @@ def generate_launch_description():
         name="spawn_red_cube",
         output="screen",
         arguments=[
+            "-world", world_name,
             "-name", "red_cube",
             "-file", "model://red_cube",
             "-x", "0.60",
@@ -33,6 +28,7 @@ def generate_launch_description():
         name="spawn_blue_cube",
         output="screen",
         arguments=[
+            "-world", world_name,
             "-name", "blue_cube",
             "-file", "model://blue_cube",
             "-x", "0.60",
@@ -42,6 +38,11 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            "world_name",
+            default_value="fp3_pick_place_world",
+        ),
+
         spawn_red_cube,
         spawn_blue_cube,
     ])

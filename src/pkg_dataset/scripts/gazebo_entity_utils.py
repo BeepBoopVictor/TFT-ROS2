@@ -27,20 +27,9 @@ def set_entity_pose(
     roll: float = 0.0,
     pitch: float = 0.0,
     yaw: float = 0.0,
-    world_name: str = "default",
+    world_name: str = "fp3_pick_place_world",
     timeout: float = 5.0,
 ) -> bool:
-    """
-    Mueve una entidad existente en Gazebo/Ignition Fortress usando ign service.
-
-    Requiere que exista el servicio:
-      /world/<world_name>/set_pose
-
-    Puedes comprobarlo con:
-      ign service -l | grep set_pose
-    """
-
-    # Convertimos RPY a quaternion.
     cy = math.cos(yaw * 0.5)
     sy = math.sin(yaw * 0.5)
     cp = math.cos(pitch * 0.5)
@@ -85,7 +74,6 @@ def set_entity_pose(
         print(result.stdout)
         return False
 
-    # En algunos casos ign devuelve 'data: true', en otros sólo returncode 0.
     if "false" in result.stdout.lower():
         print(f"[gazebo_entity_utils] set_entity_pose returned false for {entity_name}")
         print(result.stdout)
@@ -97,7 +85,7 @@ def set_entity_pose(
 def hide_entity(
     entity_name: str,
     hidden_xyz,
-    world_name: str = "default",
+    world_name: str = "fp3_pick_place_world",
 ) -> bool:
     return set_entity_pose(
         entity_name=entity_name,
@@ -108,46 +96,86 @@ def hide_entity(
     )
 
 
-def get_entity_pose(entity_name: str, world_name: str = "default") -> Optional[PoseXYZRPY]:
+def _parse_pose_info_text(text: str, entity_name: str) -> Optional[PoseXYZRPY]:
     """
-    Intenta consultar la pose con ign model.
+    Parse robusto del topic:
+      /world/<world_name>/pose/info
 
-    En Fortress suele funcionar alguna de estas formas:
-      ign model -m red_cube -p
-      ign model -w default -m red_cube -p
+    Buscamos explícitamente:
+      name: "red_cube"
+      ...
+      position {
+        x: ...
+        y: ...
+        z: ...
+      }
 
-    Si no puede parsear, devuelve None.
+    No usamos los primeros números del output porque pueden ser IDs internos.
     """
 
-    candidate_cmds = [
-        ["ign", "model", "-m", entity_name, "-p"],
-        ["ign", "model", "-w", world_name, "-m", entity_name, "-p"],
+    name_pattern = re.escape(entity_name)
+
+    pattern = (
+        r'name:\s*"' + name_pattern + r'"\s*'
+        r'(?:.|\n)*?'
+        r'position\s*\{\s*'
+        r'x:\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*'
+        r'y:\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*'
+        r'z:\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)'
+    )
+
+    match = re.search(pattern, text)
+
+    if not match:
+        return None
+
+    x = float(match.group(1))
+    y = float(match.group(2))
+    z = float(match.group(3))
+
+    return x, y, z, 0.0, 0.0, 0.0
+
+
+def get_entity_pose(entity_name: str, world_name: str = "fp3_pick_place_world") -> Optional[PoseXYZRPY]:
+    """
+    Consulta la pose real de una entidad desde Ignition/Gazebo.
+
+    Importante:
+    - No usamos `ign model -p` porque su salida puede variar y meter IDs internos.
+    - Usamos el topic global de poses del mundo y filtramos por nombre.
+    """
+
+    topic = f"/world/{world_name}/pose/info"
+
+    cmd = [
+        "ign",
+        "topic",
+        "-e",
+        "-t",
+        topic,
+        "-n",
+        "1",
     ]
 
-    for cmd in candidate_cmds:
-        try:
-            result = _run_command(cmd, timeout=5.0)
-        except Exception:
-            continue
+    try:
+        result = _run_command(cmd, timeout=6.0)
+    except Exception as exc:
+        print(f"[gazebo_entity_utils] get_entity_pose exception: {exc}")
+        return None
 
-        if result.returncode != 0:
-            continue
+    if result.returncode != 0:
+        print(f"[gazebo_entity_utils] get_entity_pose failed for {entity_name}")
+        print(result.stdout)
+        return None
 
-        text = result.stdout.strip()
+    pose = _parse_pose_info_text(result.stdout, entity_name)
 
-        # Extrae floats del output.
-        nums = re.findall(r"[-+]?\d*\.\d+|[-+]?\d+", text)
+    if pose is None:
+        print(f"[gazebo_entity_utils] Could not parse pose for {entity_name}")
+        print("Output head:")
+        print(result.stdout[:1500])
 
-        if len(nums) >= 6:
-            vals = [float(v) for v in nums[:6]]
-            return vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]
-
-        # Algunos outputs pueden tener formato Pose [x y z roll pitch yaw].
-        if len(nums) >= 3:
-            vals = [float(v) for v in nums[:3]]
-            return vals[0], vals[1], vals[2], 0.0, 0.0, 0.0
-
-    return None
+    return pose
 
 
 def distance_xy(a_xyz, b_xyz) -> float:
@@ -158,3 +186,22 @@ def distance_xy(a_xyz, b_xyz) -> float:
 
 def distance_z(a_xyz, b_xyz) -> float:
     return abs(float(a_xyz[2]) - float(b_xyz[2]))
+
+
+def point_inside_rectangle_xy(point_xyz, center_xyz, size_xy, margin: float = 0.0) -> bool:
+    px = float(point_xyz[0])
+    py = float(point_xyz[1])
+
+    cx = float(center_xyz[0])
+    cy = float(center_xyz[1])
+
+    sx = float(size_xy[0])
+    sy = float(size_xy[1])
+
+    half_x = sx * 0.5 + margin
+    half_y = sy * 0.5 + margin
+
+    return (
+        cx - half_x <= px <= cx + half_x
+        and cy - half_y <= py <= cy + half_y
+    )

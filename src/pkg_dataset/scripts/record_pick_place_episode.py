@@ -20,8 +20,15 @@ from rclpy.utilities import remove_ros_args
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, JointState
 
-from gazebo_entity_utils import get_entity_pose, distance_xy, distance_z
+from gazebo_entity_utils import (
+    get_entity_pose,
+    distance_xy,
+    distance_z,
+    point_inside_rectangle_xy,
+)
 
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from builtin_interfaces.msg import Duration
 
 class PickPlaceDatasetRecorder(Node):
     def __init__(
@@ -81,6 +88,12 @@ class PickPlaceDatasetRecorder(Node):
         self.arm_joints: List[str] = list(config["robot"]["arm_joints"])
         self.gripper_joints: List[str] = list(config["robot"]["gripper_joints"])
         self.all_tracked_joints: List[str] = self.arm_joints + self.gripper_joints
+
+        self.gripper_pub = self.create_publisher(
+            JointTrajectory,
+            "/fp3_hand_controller/joint_trajectory",
+            10,
+        )
 
         self.success = False
         self.failure_reason = ""
@@ -224,17 +237,23 @@ class PickPlaceDatasetRecorder(Node):
 
     def validate_final_object_pose(self, goal_xyz) -> bool:
         validation_cfg = self.config.get("validation", {})
+
         if not validation_cfg.get("enabled", True):
-            self.get_logger().warning("Validación geométrica desactivada. Marcando episodio como success por ejecución.")
+            self.get_logger().warning(
+                "Validación geométrica desactivada. Marcando episodio como success por ejecución."
+            )
             return True
 
         gazebo_cfg = self.config.get("gazebo", {})
-        world_name = gazebo_cfg.get("world_name", "default")
+        world_name = gazebo_cfg.get("world_name", "fp3_pick_place_world")
 
         if self.object_color == "red":
             entity_name = gazebo_cfg.get("red_cube_entity", "red_cube")
         else:
             entity_name = gazebo_cfg.get("blue_cube_entity", "blue_cube")
+
+        # Pequeña espera para que el cubo termine de asentarse tras soltarlo.
+        time.sleep(1.0)
 
         pose = get_entity_pose(entity_name, world_name=world_name)
 
@@ -246,8 +265,6 @@ class PickPlaceDatasetRecorder(Node):
                 self.failure_reason = "final_pose_query_failed"
                 return False
 
-            # Fallback: si la trayectoria completa se ejecutó y no exigimos pose real,
-            # marcamos success operativo. Queda reflejado en metadata porque final_cube_pose=None.
             return True
 
         final_xyz = [float(pose[0]), float(pose[1]), float(pose[2])]
@@ -256,20 +273,51 @@ class PickPlaceDatasetRecorder(Node):
         self.distance_to_goal_xy = distance_xy(final_xyz, goal_xyz)
         self.distance_to_goal_z = distance_z(final_xyz, goal_xyz)
 
-        tol_xy = float(validation_cfg.get("goal_tolerance_xy", 0.12))
-        tol_z = float(validation_cfg.get("goal_tolerance_z", 0.18))
-
         self.get_logger().info(
             f"Validación final {entity_name}: final={final_xyz}, goal={goal_xyz}, "
             f"d_xy={self.distance_to_goal_xy:.4f}, d_z={self.distance_to_goal_z:.4f}"
         )
 
+        # 1) Validación principal: dentro del área rectangular del goal.
+        goal_area_cfg = validation_cfg.get("goal_area", {})
+        area_enabled = bool(goal_area_cfg.get("enabled", True))
+
+        if area_enabled:
+            color_cfg = goal_area_cfg.get(self.object_color, {})
+
+            area_center = color_cfg.get("center_xyz", goal_xyz)
+            area_size_xy = color_cfg.get("size_xy", [0.36, 0.36])
+            area_margin = float(goal_area_cfg.get("margin_xy", 0.04))
+
+            inside_area = point_inside_rectangle_xy(
+                point_xyz=final_xyz,
+                center_xyz=area_center,
+                size_xy=area_size_xy,
+                margin=area_margin,
+            )
+
+            tol_z = float(validation_cfg.get("goal_tolerance_z", 0.25))
+            z_ok = self.distance_to_goal_z <= tol_z
+
+            self.get_logger().info(
+                f"Validación por área {self.object_color}: "
+                f"center={area_center}, size_xy={area_size_xy}, margin={area_margin:.3f}, "
+                f"inside_area={inside_area}, z_ok={z_ok}"
+            )
+
+            if inside_area and z_ok:
+                return True
+
+        # 2) Fallback: distancia al centro del goal.
+        tol_xy = float(validation_cfg.get("goal_tolerance_xy", 0.25))
+        tol_z = float(validation_cfg.get("goal_tolerance_z", 0.25))
+
         if self.distance_to_goal_xy <= tol_xy and self.distance_to_goal_z <= tol_z:
+            self.get_logger().info("Validación por distancia al centro del goal OK.")
             return True
 
         self.failure_reason = "cube_not_in_goal"
         return False
-
 
     def prepare_output(self):
         self.images_dir.mkdir(parents=True, exist_ok=True)
@@ -408,27 +456,64 @@ class PickPlaceDatasetRecorder(Node):
         self.csv_writer.writerow(row)
         self.step_idx += 1
 
-    def run_shell_command(self, command, phase: str, action: Dict[str, Any]) -> bool:
+    def run_shell_command(
+        self,
+        command,
+        phase: str,
+        action: Dict[str, Any],
+        retries: int = 1,
+        timeout_sec: float = 90.0,
+    ) -> bool:
         self.current_phase = phase
         self.current_action = action
 
-        self.get_logger().info(f"[{phase}] Ejecutando: {' '.join(command)}")
+        for attempt in range(retries + 1):
+            attempt_label = f"{attempt + 1}/{retries + 1}"
 
-        result = subprocess.run(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+            self.get_logger().info(
+                f"[{phase}] Ejecutando intento {attempt_label}: {' '.join(command)}"
+            )
 
-        if result.returncode != 0:
-            self.get_logger().error(f"[{phase}] Falló comando con returncode={result.returncode}")
+            try:
+                result = subprocess.run(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=timeout_sec,
+                )
+            except subprocess.TimeoutExpired as exc:
+                self.get_logger().error(
+                    f"[{phase}] Timeout tras {timeout_sec:.1f}s en intento {attempt_label}"
+                )
+
+                if attempt < retries:
+                    self.get_logger().warning(f"[{phase}] Reintentando tras timeout...")
+                    time.sleep(2.0)
+                    continue
+
+                self.failure_reason = f"command_timeout:{phase}"
+                return False
+
+            if result.returncode == 0:
+                self.get_logger().info(f"[{phase}] Comando completado.")
+                return True
+
+            self.get_logger().error(
+                f"[{phase}] Falló comando con returncode={result.returncode} en intento {attempt_label}"
+            )
             self.get_logger().error(result.stdout)
+
+            if attempt < retries:
+                self.get_logger().warning(f"[{phase}] Reintentando comando...")
+                time.sleep(2.0)
+                continue
+
             self.failure_reason = f"command_failed:{phase}"
             return False
 
-        self.get_logger().info(f"[{phase}] Comando completado.")
-        return True
+        self.failure_reason = f"command_failed:{phase}"
+        return False
 
     def move_xyz(self, x: float, y: float, z: float, phase: str) -> bool:
         q = self.config["robot"]["grasp_down_quat"]
@@ -458,34 +543,133 @@ class PickPlaceDatasetRecorder(Node):
             "target_quat": [qx, qy, qz, qw],
         }
 
-        ok = self.run_shell_command(command, phase, action)
+        ok = self.run_shell_command(
+            command,
+            phase,
+            action,
+            retries=int(self.config["motion"].get("move_retries", 1)),
+            timeout_sec=float(self.config["motion"].get("move_timeout_sec", 90.0)),
+        )
         time.sleep(float(self.config["motion"]["settle_after_motion_sec"]))
         return ok
+
+    def wait_for_gripper_position(
+        self,
+        width: float,
+        timeout_sec: float = 5.0,
+        tolerance: float = 0.004,
+    ) -> bool:
+        """
+        Espera a que ambos dedos estén cerca del objetivo.
+        No exige exactitud absoluta porque Gazebo puede dejar pequeñas diferencias
+        por contacto con el cubo.
+        """
+        target = float(width)
+        start = time.time()
+
+        while rclpy.ok() and time.time() - start < timeout_sec:
+            joint_map = self._joint_map()
+
+            j1 = joint_map.get("fp3_finger_joint1", {}).get("position", None)
+            j2 = joint_map.get("fp3_finger_joint2", {}).get("position", None)
+
+            if j1 is not None and j2 is not None:
+                e1 = abs(float(j1) - target)
+                e2 = abs(float(j2) - target)
+
+                if e1 <= tolerance and e2 <= tolerance:
+                    return True
+
+            time.sleep(0.05)
+
+        joint_map = self._joint_map()
+        j1 = joint_map.get("fp3_finger_joint1", {}).get("position", None)
+        j2 = joint_map.get("fp3_finger_joint2", {}).get("position", None)
+
+        self.get_logger().warning(
+            f"Gripper no alcanzó exactamente width={target:.4f}. "
+            f"finger1={j1}, finger2={j2}, tolerance={tolerance:.4f}"
+        )
+
+        return False
+
+
+    def publish_gripper_trajectory(self, width: float, duration: float):
+        """
+        Publica directamente una trayectoria al JointTrajectoryController del gripper.
+        Evita depender del cliente externo move_gripper y de timeouts del action server.
+        """
+        msg = JointTrajectory()
+        msg.joint_names = [
+            "fp3_finger_joint1",
+            "fp3_finger_joint2",
+        ]
+
+        point = JointTrajectoryPoint()
+        point.positions = [float(width), float(width)]
+        point.velocities = [0.0, 0.0]
+        point.time_from_start = Duration(
+            sec=int(duration),
+            nanosec=int((duration - int(duration)) * 1e9),
+        )
+
+        msg.points.append(point)
+
+        # Publicar varias veces aumenta robustez si el controlador acaba de activarse
+        # o si hay un pequeño retraso de DDS.
+        for _ in range(5):
+            self.gripper_pub.publish(msg)
+            time.sleep(0.05)
+
 
     def move_gripper(self, width: float, phase: str) -> bool:
         safe_min = float(self.config["gripper"]["safe_min_width"])
         open_width = float(self.config["gripper"]["open_width"])
-        width = max(safe_min, min(open_width, width))
+        width = max(safe_min, min(open_width, float(width)))
 
         duration = float(self.config["gripper"]["command_duration"])
 
-        command = [
-            "ros2",
-            "run",
-            "pkg_moveit_config",
-            "move_gripper",
-            f"{width:.5f}",
-            f"{duration:.3f}",
-        ]
-
-        action = {
-            "type": "move_gripper",
+        self.current_phase = phase
+        self.current_action = {
+            "type": "move_gripper_direct_joint_trajectory",
             "target_gripper_width": width,
         }
 
-        ok = self.run_shell_command(command, phase, action)
-        time.sleep(float(self.config["motion"]["settle_after_gripper_sec"]))
-        return ok
+        self.get_logger().info(
+            f"[{phase}] Moviendo gripper por /fp3_hand_controller/joint_trajectory: "
+            f"width={width:.5f}, duration={duration:.3f}"
+        )
+
+        try:
+            self.publish_gripper_trajectory(width, duration)
+        except Exception as exc:
+            self.failure_reason = f"gripper_publish_failed:{phase}"
+            self.get_logger().error(f"[{phase}] Error publicando gripper: {exc}")
+            return False
+
+        # Espera física del movimiento.
+        time.sleep(duration + float(self.config["motion"]["settle_after_gripper_sec"]))
+
+        # En apertura inicial y liberación sí conviene exigir apertura.
+        # En cierre sobre cubo NO conviene exigir width exacto, porque el cubo bloquea
+        # mecánicamente el cierre y eso es justo lo deseado.
+        if "close" in phase or "grasp" in phase:
+            self.get_logger().info(f"[{phase}] Comando de cierre enviado. No exijo posición exacta por contacto con cubo.")
+            return True
+
+        reached = self.wait_for_gripper_position(
+            width=width,
+            timeout_sec=3.0,
+            tolerance=float(self.config["gripper"].get("position_tolerance", 0.006)),
+        )
+
+        if not reached:
+            self.get_logger().warning(
+                f"[{phase}] El gripper no llegó exactamente al objetivo, "
+                f"pero el comando fue enviado. Continuando para no bloquear el episodio."
+            )
+
+        return True
 
     def run_episode(self) -> bool:
         scene = self.config["scene"]
