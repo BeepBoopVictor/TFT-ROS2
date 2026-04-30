@@ -7,4 +7,5 @@ docker run --rm -it \
   -e QT_X11_NO_MITSHM=1 \
   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
   -v $(pwd):/root/tfg_panda_ws \
+  --gpus all \
   tfg-panda:humble

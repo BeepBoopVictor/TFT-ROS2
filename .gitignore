@@ -31,6 +31,9 @@ data/videos/
 *.db3
 *.mcap
 datasets/
+outputs/
+
+src/lerobot
 
 # TensorBoard
 runs/
