@@ -82,7 +82,7 @@
 
     <include>
       <uri>model://conveyor</uri>
-      <pose>0.60 0.00 0.00 0 0 1.5708</pose>
+      <pose>0.40 0.00 0.00 0 0 1.5708</pose>
     </include>
 
     <include>
@@ -186,6 +186,33 @@
               <far>6.0</far>
             </clip>
             <camera_info_topic>/camera_cabinet/camera_info</camera_info_topic>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <model name="camera_top_model">
+      <static>true</static>
+      <pose>0.55 0.00 1.35 0 1.5708 0</pose>
+
+      <link name="link">
+        <sensor name="camera_top_model_sensor" type="camera">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <topic>/camera_top_model/image</topic>
+
+          <camera name="camera_top_model">
+            <horizontal_fov>1.45</horizontal_fov>
+            <image>
+              <width>424</width>
+              <height>240</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.02</near>
+              <far>6.0</far>
+            </clip>
+            <camera_info_topic>/camera_top_model/camera_info</camera_info_topic>
           </camera>
         </sensor>
       </link>

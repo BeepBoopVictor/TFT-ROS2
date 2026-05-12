@@ -58,4 +58,13 @@ def generate_launch_description():
             arguments=["/camera_cabinet/image"],
             condition=is_cabinet_or_all(),
         ),
+
+        Node(
+            package="rqt_image_view",
+            executable="rqt_image_view",
+            name="rqt_image_view_top_model",
+            output="screen",
+            arguments=["/camera_top_model/image"],
+            condition=is_selected("top_model"),
+        ),
     ])

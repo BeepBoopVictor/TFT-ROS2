@@ -109,7 +109,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "camera",
             default_value="cabinet",
-            description="Camera to bridge/view: top, front, cabinet, all, none",
+            description="Camera to bridge/view: top, front, top_model, cabinet, all, none",
         ),
 
         DeclareLaunchArgument(

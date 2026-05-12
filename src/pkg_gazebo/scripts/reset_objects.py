@@ -19,7 +19,7 @@ def main():
         "ros2", "run", "ros_gz_sim", "create",
         "-name", "red_cube",
         "-file", "model://red_cube",
-        "-x", "0.60",
+        "-x", "0.40",
         "-y", "0.18",
         "-z", "0.18",
     ])
@@ -30,7 +30,7 @@ def main():
         "ros2", "run", "ros_gz_sim", "create",
         "-name", "blue_cube",
         "-file", "model://blue_cube",
-        "-x", "0.60",
+        "-x", "0.40",
         "-y", "-0.18",
         "-z", "0.18",
     ])

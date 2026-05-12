@@ -4,6 +4,11 @@
 build
 install
 log
+datasets/
+datasets
+outputs/
+outputs
+training_logs
 
 data/datasets/raw
 data/datasets/processed

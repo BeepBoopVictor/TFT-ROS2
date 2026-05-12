@@ -18,10 +18,10 @@ def spawn(model_name, x, y, z):
 
 
 def main():
-    red_x = random.uniform(0.56, 0.64)
+    red_x = random.uniform(0.36, 0.64)
     red_y = random.uniform(0.08, 0.26)
 
-    blue_x = random.uniform(0.56, 0.64)
+    blue_x = random.uniform(0.36, 0.64)
     blue_y = random.uniform(-0.26, -0.08)
 
     spawn("red_cube", red_x, red_y, 0.18)
