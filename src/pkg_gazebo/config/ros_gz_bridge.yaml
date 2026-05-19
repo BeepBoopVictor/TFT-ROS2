@@ -1,93 +1,77 @@
-# ros_gz_bridge.yaml
-# Bridge configuration for FP3 / Franka Panda simulation in Gazebo Fortress.
-# Includes clock, cube/world poses for RL, and camera topics.
+# - ros_topic_name: "/clock"
+#   gz_topic_name: "/clock"
+#   ros_type_name: "rosgraph_msgs/msg/Clock"
+#   gz_type_name: "gz.msgs.Clock"
+#   direction: GZ_TO_ROS
 
-- ros_topic_name: "/clock"
-  gz_topic_name: "/clock"
-  ros_type_name: "rosgraph_msgs/msg/Clock"
-  gz_type_name: "gz.msgs.Clock"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/world/fp3_pick_place_world/dynamic_pose/info"
+#   gz_topic_name: "/world/fp3_pick_place_world/dynamic_pose/info"
+#   ros_type_name: "tf2_msgs/msg/TFMessage"
+#   gz_type_name: "gz.msgs.Pose_V"
+#   direction: GZ_TO_ROS
 
-# ---------------------------------------------------------------------------
-# Cube/model poses for RL observation
-# ---------------------------------------------------------------------------
-# Reliable source in this world. It contains child_frame_id entries such as:
-#   red_cube
-#   blue_cube
-# Bridged as tf2_msgs/TFMessage.
-- ros_topic_name: "/world/fp3_pick_place_world/dynamic_pose/info"
-  gz_topic_name: "/world/fp3_pick_place_world/dynamic_pose/info"
-  ros_type_name: "tf2_msgs/msg/TFMessage"
-  gz_type_name: "gz.msgs.Pose_V"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/world/fp3_pick_place_world/pose/info"
+#   gz_topic_name: "/world/fp3_pick_place_world/pose/info"
+#   ros_type_name: "tf2_msgs/msg/TFMessage"
+#   gz_type_name: "gz.msgs.Pose_V"
+#   direction: GZ_TO_ROS
 
-- ros_topic_name: "/world/fp3_pick_place_world/pose/info"
-  gz_topic_name: "/world/fp3_pick_place_world/pose/info"
-  ros_type_name: "tf2_msgs/msg/TFMessage"
-  gz_type_name: "gz.msgs.Pose_V"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/model/red_cube/pose"
+#   gz_topic_name: "/model/red_cube/pose"
+#   ros_type_name: "geometry_msgs/msg/Pose"
+#   gz_type_name: "gz.msgs.Pose"
+#   direction: GZ_TO_ROS
 
-# Optional direct model pose topics. They may not exist in every Gazebo setup,
-# but keeping them here is useful if they are exposed.
-- ros_topic_name: "/model/red_cube/pose"
-  gz_topic_name: "/model/red_cube/pose"
-  ros_type_name: "geometry_msgs/msg/Pose"
-  gz_type_name: "gz.msgs.Pose"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/model/blue_cube/pose"
+#   gz_topic_name: "/model/blue_cube/pose"
+#   ros_type_name: "geometry_msgs/msg/Pose"
+#   gz_type_name: "gz.msgs.Pose"
+#   direction: GZ_TO_ROS
 
-- ros_topic_name: "/model/blue_cube/pose"
-  gz_topic_name: "/model/blue_cube/pose"
-  ros_type_name: "geometry_msgs/msg/Pose"
-  gz_type_name: "gz.msgs.Pose"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/camera_top_conveyor/image"
+#   gz_topic_name: "/camera_top_conveyor/image"
+#   ros_type_name: "sensor_msgs/msg/Image"
+#   gz_type_name: "gz.msgs.Image"
+#   direction: GZ_TO_ROS
 
-# ---------------------------------------------------------------------------
-# Cameras
-# ---------------------------------------------------------------------------
-- ros_topic_name: "/camera_top_conveyor/image"
-  gz_topic_name: "/camera_top_conveyor/image"
-  ros_type_name: "sensor_msgs/msg/Image"
-  gz_type_name: "gz.msgs.Image"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/camera_top_conveyor/camera_info"
+#   gz_topic_name: "/camera_top_conveyor/camera_info"
+#   ros_type_name: "sensor_msgs/msg/CameraInfo"
+#   gz_type_name: "gz.msgs.CameraInfo"
+#   direction: GZ_TO_ROS
 
-- ros_topic_name: "/camera_top_conveyor/camera_info"
-  gz_topic_name: "/camera_top_conveyor/camera_info"
-  ros_type_name: "sensor_msgs/msg/CameraInfo"
-  gz_type_name: "gz.msgs.CameraInfo"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/camera_front_conveyor/image"
+#   gz_topic_name: "/camera_front_conveyor/image"
+#   ros_type_name: "sensor_msgs/msg/Image"
+#   gz_type_name: "gz.msgs.Image"
+#   direction: GZ_TO_ROS
 
-- ros_topic_name: "/camera_front_conveyor/image"
-  gz_topic_name: "/camera_front_conveyor/image"
-  ros_type_name: "sensor_msgs/msg/Image"
-  gz_type_name: "gz.msgs.Image"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/camera_front_conveyor/camera_info"
+#   gz_topic_name: "/camera_front_conveyor/camera_info"
+#   ros_type_name: "sensor_msgs/msg/CameraInfo"
+#   gz_type_name: "gz.msgs.CameraInfo"
+#   direction: GZ_TO_ROS
 
-- ros_topic_name: "/camera_front_conveyor/camera_info"
-  gz_topic_name: "/camera_front_conveyor/camera_info"
-  ros_type_name: "sensor_msgs/msg/CameraInfo"
-  gz_type_name: "gz.msgs.CameraInfo"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/camera_cabinet/image"
+#   gz_topic_name: "/camera_cabinet/image"
+#   ros_type_name: "sensor_msgs/msg/Image"
+#   gz_type_name: "gz.msgs.Image"
+#   direction: GZ_TO_ROS
 
-- ros_topic_name: "/camera_cabinet/image"
-  gz_topic_name: "/camera_cabinet/image"
-  ros_type_name: "sensor_msgs/msg/Image"
-  gz_type_name: "gz.msgs.Image"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/camera_cabinet/camera_info"
+#   gz_topic_name: "/camera_cabinet/camera_info"
+#   ros_type_name: "sensor_msgs/msg/CameraInfo"
+#   gz_type_name: "gz.msgs.CameraInfo"
+#   direction: GZ_TO_ROS
 
-- ros_topic_name: "/camera_cabinet/camera_info"
-  gz_topic_name: "/camera_cabinet/camera_info"
-  ros_type_name: "sensor_msgs/msg/CameraInfo"
-  gz_type_name: "gz.msgs.CameraInfo"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/camera_top_model/image"
+#   gz_topic_name: "/camera_top_model/image"
+#   ros_type_name: "sensor_msgs/msg/Image"
+#   gz_type_name: "gz.msgs.Image"
+#   direction: GZ_TO_ROS
 
-- ros_topic_name: "/camera_top_model/image"
-  gz_topic_name: "/camera_top_model/image"
-  ros_type_name: "sensor_msgs/msg/Image"
-  gz_type_name: "gz.msgs.Image"
-  direction: GZ_TO_ROS
-
-- ros_topic_name: "/camera_top_model/camera_info"
-  gz_topic_name: "/camera_top_model/camera_info"
-  ros_type_name: "sensor_msgs/msg/CameraInfo"
-  gz_type_name: "gz.msgs.CameraInfo"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "/camera_top_model/camera_info"
+#   gz_topic_name: "/camera_top_model/camera_info"
+#   ros_type_name: "sensor_msgs/msg/CameraInfo"
+#   gz_type_name: "gz.msgs.CameraInfo"
+#   direction: GZ_TO_ROS

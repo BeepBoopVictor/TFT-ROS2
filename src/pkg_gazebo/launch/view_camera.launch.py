@@ -49,7 +49,6 @@ def generate_launch_description():
             condition=is_selected("front"),
         ),
 
-        # Si camera:=all, mostramos sólo la caballera para mantener una única ventana.
         Node(
             package="rqt_image_view",
             executable="rqt_image_view",
@@ -59,12 +58,13 @@ def generate_launch_description():
             condition=is_cabinet_or_all(),
         ),
 
-        Node(
-            package="rqt_image_view",
-            executable="rqt_image_view",
-            name="rqt_image_view_top_model",
-            output="screen",
-            arguments=["/camera_top_model/image"],
-            condition=is_selected("top_model"),
-        ),
+        # Este nodo se conserva como una cámara complementaria fuera de servicio
+        # Node(
+        #     package="rqt_image_view",
+        #     executable="rqt_image_view",
+        #     name="rqt_image_view_top_model",
+        #     output="screen",
+        #     arguments=["/camera_top_model/image"],
+        #     condition=is_selected("top_model"),
+        # ),
     ])

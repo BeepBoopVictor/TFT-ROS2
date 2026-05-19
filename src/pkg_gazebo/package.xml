@@ -4,6 +4,7 @@
   <version>0.1.0</version>
   <description>
     Gazebo/Ignition Fortress simulation package for the FP3 pick and place TFG project.
+    Paquete de simulación Gazebo/Ignition Fortress para el proyecto de TFG de pick and place FP3.
   </description>
 
   <maintainer email="gbvictor011@protonmail.com">Victor</maintainer>

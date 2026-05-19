@@ -23,6 +23,7 @@ def generate_launch_description():
     camera = LaunchConfiguration("camera")
     view_camera = LaunchConfiguration("view_camera")
     world_name = LaunchConfiguration("world_name")
+    world_file = LaunchConfiguration("world_file")
 
     gazebo_models_path = os.path.join(pkg_gazebo_share, "models")
     ros_share_path = str(Path(pkg_description_share).parent)
@@ -38,7 +39,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             "gui": gui,
-            "world_name": world_name,
+            "world_file": world_file,
         }.items(),
     )
 
@@ -51,6 +52,7 @@ def generate_launch_description():
                 ),
                 launch_arguments={
                     "camera": camera,
+                    "world_name": world_name,
                 }.items(),
             )
         ],
@@ -122,6 +124,16 @@ def generate_launch_description():
             "world_name",
             default_value="fp3_pick_place_world",
             description="Gazebo world name",
+        ),
+
+        DeclareLaunchArgument(
+            "world_file",
+            default_value=os.path.join(
+                pkg_gazebo_share,
+                "worlds",
+                "fp3_pick_place_world.sdf",
+            ),
+            description="Path to the SDF world file",
         ),
 
         SetEnvironmentVariable(

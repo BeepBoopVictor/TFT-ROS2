@@ -5,11 +5,9 @@ from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
-WORLD_NAME = "fp3_pick_place_world"
-
-
 def camera_condition(camera_name: str):
     selected_camera = LaunchConfiguration("camera")
+    
     return IfCondition(
         PythonExpression([
             "'", selected_camera, "' == '", camera_name, "' or '", selected_camera, "' == 'all'"
@@ -18,15 +16,20 @@ def camera_condition(camera_name: str):
 
 
 def generate_launch_description():
+    world_name = LaunchConfiguration("world_name")
+
     camera_arg = DeclareLaunchArgument(
         "camera",
         default_value="cabinet",
         description="Camera to bridge: top, front, cabinet, top_model, all, none",
     )
 
-    # ------------------------------------------------------------------
-    # Core bridge: always enabled
-    # ------------------------------------------------------------------
+    world_name_arg = DeclareLaunchArgument(
+        "world_name",
+        default_value="fp3_pick_place_world",
+        description="Gazebo world name used for /world/<name>/... bridge topics",
+    )
+
     clock_bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
@@ -37,22 +40,13 @@ def generate_launch_description():
         ],
     )
 
-    # ------------------------------------------------------------------
-    # Cube/model pose bridge: always enabled
-    # ------------------------------------------------------------------
-    # In this Gazebo Fortress world, the reliable source for cube poses is:
-    #   /world/fp3_pick_place_world/dynamic_pose/info
-    # and/or:
-    #   /world/fp3_pick_place_world/pose/info
-    # They are bridged as tf2_msgs/TFMessage and contain child_frame_id entries
-    # such as "red_cube" and "blue_cube".
     world_dynamic_pose_bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
         name="world_dynamic_pose_bridge",
         output="screen",
         arguments=[
-            f"/world/{WORLD_NAME}/dynamic_pose/info@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V",
+            ["/world/", world_name, "/dynamic_pose/info@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V"],
         ],
     )
 
@@ -62,13 +56,10 @@ def generate_launch_description():
         name="world_pose_info_bridge",
         output="screen",
         arguments=[
-            f"/world/{WORLD_NAME}/pose/info@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V",
+            ["/world/", world_name, "/pose/info@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V"],
         ],
     )
 
-    # Optional direct model pose topics. Some Gazebo setups expose these topics;
-    # this world may not, but keeping the bridge here is harmless and gives
-    # compatibility with tools that expect /model/<cube>/pose.
     red_cube_pose_bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
@@ -182,10 +173,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         camera_arg,
+        world_name_arg,
 
         clock_bridge,
 
-        # Always-on cube/world pose bridges for RL observations.
         world_dynamic_pose_bridge,
         world_pose_info_bridge,
         red_cube_pose_bridge,
