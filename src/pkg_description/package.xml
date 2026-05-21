@@ -7,7 +7,7 @@
     unified robot_description used by RViz, Gazebo, MoveIt and RL nodes.
   </description>
 
-  <maintainer email="victor@example.com">Victor</maintainer>
+  <maintainer email="gbvictor011@protonmail.com">Víctor Gil Bernal</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
@@ -20,10 +20,8 @@
   <depend>rviz2</depend>
   <depend>tf2_ros</depend>
 
-  <!-- Panda official description -->
   <depend>franka_description</depend>
 
-  <!-- Needed later by Gazebo/control consumers -->
   <depend>ros2_control</depend>
   <depend>ros2_controllers</depend>
   <depend>controller_manager</depend>

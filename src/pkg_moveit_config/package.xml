@@ -6,7 +6,7 @@
     MoveIt 2 configuration for the FP3 Panda pick and place simulation project.
   </description>
 
-  <maintainer email="victor@example.com">Victor</maintainer>
+  <maintainer email="gbvictor011@protonmail.com">Victor Gil Bernal</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

@@ -23,13 +23,6 @@
   <!-- Planning groups -->
   <!-- ===================== -->
 
-  <!-- 
-    Grupo principal.
-    Lo definimos como cadena hasta fp3_hand_tcp para que MoveIt pueda planificar
-    directamente poses XYZ del TCP.
-    Aunque la cadena incluya links fijos, los únicos joints activos siguen siendo
-    fp3_joint1 ... fp3_joint7.
-  -->
   <group name="arm">
     <chain base_link="${p}${r}_link0" tip_link="${p}${r}_hand_tcp"/>
   </group>
@@ -98,7 +91,7 @@
   <disable_collisions link1="${p}${r}_link7" link2="${p}${r}_link8" reason="Adjacent"/>
   <disable_collisions link1="${p}${r}_link8" link2="${p}${r}_hand" reason="Adjacent"/>
 
-  <!-- Brazo: pares cercanos habituales en Franka -->
+  <!-- Brazo -->
   <disable_collisions link1="${p}${r}_link0" link2="${p}${r}_link2" reason="Never"/>
   <disable_collisions link1="${p}${r}_link1" link2="${p}${r}_link3" reason="Never"/>
   <disable_collisions link1="${p}${r}_link2" link2="${p}${r}_link4" reason="Never"/>

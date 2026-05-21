@@ -14,6 +14,7 @@ def generate_launch_description():
     camera = LaunchConfiguration("camera")
     view_camera = LaunchConfiguration("view_camera")
     world_name = LaunchConfiguration("world_name")
+    world_file = LaunchConfiguration("world_file")
 
     pkg_gazebo = get_package_share_directory("pkg_gazebo")
     pkg_moveit = get_package_share_directory("pkg_moveit_config")
@@ -27,6 +28,7 @@ def generate_launch_description():
             "camera": camera,
             "view_camera": view_camera,
             "world_name": world_name,
+            "world_file": world_file,
         }.items(),
     )
 
@@ -87,6 +89,14 @@ def generate_launch_description():
         DeclareLaunchArgument("camera", default_value="cabinet"),
         DeclareLaunchArgument("view_camera", default_value="false"),
         DeclareLaunchArgument("world_name", default_value="fp3_pick_place_world"),
+        DeclareLaunchArgument(
+            "world_file",
+            default_value=os.path.join(
+                pkg_gazebo,
+                "worlds",
+                "fp3_pick_place_world.sdf",
+            ),
+        ),
 
         gazebo_launch,
 
