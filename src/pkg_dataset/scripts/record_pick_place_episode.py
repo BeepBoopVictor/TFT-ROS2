@@ -30,6 +30,7 @@ from gazebo_entity_utils import (
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
 
+
 class PickPlaceDatasetRecorder(Node):
     def __init__(
         self,
@@ -39,7 +40,7 @@ class PickPlaceDatasetRecorder(Node):
         override_pick_xyz=None,
         override_goal_xyz=None,
         scene_spec_path: str = "",
-    ):        
+    ):
         super().__init__("pick_place_dataset_recorder")
 
         self.config = config
@@ -64,8 +65,14 @@ class PickPlaceDatasetRecorder(Node):
 
         self.bridge = CvBridge()
 
+        # Nuevo formato multicámara.
+        self.latest_images: Dict[str, Any] = {}
+        self.latest_image_stamps: Dict[str, float] = {}
+
+        # Compatibilidad con código antiguo monocámara.
         self.latest_image = None
         self.latest_image_stamp = None
+
         self.latest_joint_state: Optional[JointState] = None
 
         self.recording = False
@@ -83,7 +90,24 @@ class PickPlaceDatasetRecorder(Node):
         self.episode_dir = self.dataset_root / "episodes" / f"episode_{episode_id:06d}_{object_color}"
         self.images_dir = self.episode_dir / "images"
 
-        self.camera_topic = config["camera"]["rgb_topic"]
+        camera_cfg = config.get("camera", {})
+        self.cameras = camera_cfg.get("cameras", None)
+
+        if self.cameras:
+            self.camera_specs = {}
+            for cam_key, cam_data in self.cameras.items():
+                self.camera_specs[cam_key] = {
+                    "rgb_topic": cam_data["rgb_topic"],
+                    "camera_name": cam_data.get("camera_name", cam_key),
+                }
+        else:
+            self.camera_topic = camera_cfg["rgb_topic"]
+            self.camera_specs = {
+                "main": {
+                    "rgb_topic": self.camera_topic,
+                    "camera_name": camera_cfg.get("camera_name", "camera"),
+                }
+            }
 
         self.arm_joints: List[str] = list(config["robot"]["arm_joints"])
         self.gripper_joints: List[str] = list(config["robot"]["gripper_joints"])
@@ -98,12 +122,24 @@ class PickPlaceDatasetRecorder(Node):
         self.success = False
         self.failure_reason = ""
 
-        self.image_sub = self.create_subscription(
-            Image,
-            self.camera_topic,
-            self.image_callback,
-            10,
-        )
+        self.image_subs = []
+
+        for cam_key, cam_spec in self.camera_specs.items():
+            topic = cam_spec["rgb_topic"]
+
+            sub = self.create_subscription(
+                Image,
+                topic,
+                lambda msg, key=cam_key: self.image_callback(msg, key),
+                10,
+            )
+
+            self.image_subs.append(sub)
+
+            self.get_logger().info(
+                f"Cámara configurada: key={cam_key}, topic={topic}, "
+                f"name={cam_spec['camera_name']}"
+            )
 
         self.joint_sub = self.create_subscription(
             JointState,
@@ -117,37 +153,61 @@ class PickPlaceDatasetRecorder(Node):
             self.sample_callback,
         )
 
-    def image_callback(self, msg: Image):
+    def image_callback(self, msg: Image, cam_key: str):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-            self.latest_image = cv_image
-            self.latest_image_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+            stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+
+            self.latest_images[cam_key] = cv_image
+            self.latest_image_stamps[cam_key] = stamp
+
+            # Compatibilidad con código antiguo.
+            # Si existe cámara cabinet, será la principal.
+            # Si no, usamos la primera cámara recibida.
+            if cam_key == "cabinet" or self.latest_image is None:
+                self.latest_image = cv_image
+                self.latest_image_stamp = stamp
+
         except Exception as exc:
-            self.get_logger().error(f"Error convirtiendo imagen: {exc}")
+            self.get_logger().error(
+                f"Error convirtiendo imagen de cámara {cam_key}: {exc}"
+            )
 
     def joint_state_callback(self, msg: JointState):
         self.latest_joint_state = msg
 
     def wait_for_inputs(self, timeout_sec: float = 30.0) -> bool:
-        self.get_logger().info("Esperando imagen y /joint_states...")
-        self.get_logger().info(f"Topic RGB esperado: {self.camera_topic}")
+        self.get_logger().info("Esperando cámaras y /joint_states...")
+
+        for cam_key, cam_spec in self.camera_specs.items():
+            self.get_logger().info(
+                f"Topic RGB esperado [{cam_key}]: {cam_spec['rgb_topic']}"
+            )
+
         self.get_logger().info("Topic joints esperado: /joint_states")
 
         start = time.time()
         last_report = 0.0
+        required_cameras = list(self.camera_specs.keys())
 
         while rclpy.ok() and time.time() - start < timeout_sec:
-            has_image = self.latest_image is not None
+            camera_status = {
+                cam_key: cam_key in self.latest_images
+                for cam_key in required_cameras
+            }
+
+            has_all_images = all(camera_status.values())
             has_joints = self.latest_joint_state is not None
 
-            if has_image and has_joints:
+            if has_all_images and has_joints:
                 self.get_logger().info("Entradas recibidas correctamente.")
                 return True
 
             now = time.time()
             if now - last_report > 5.0:
                 self.get_logger().warning(
-                    f"Esperando entradas... image={has_image}, joint_states={has_joints}"
+                    f"Esperando entradas... cameras={camera_status}, "
+                    f"joint_states={has_joints}"
                 )
 
                 topic_names = [name for name, _ in self.get_topic_names_and_types()]
@@ -161,8 +221,11 @@ class PickPlaceDatasetRecorder(Node):
 
             time.sleep(0.1)
 
-        self.get_logger().error("No se recibieron imagen y /joint_states a tiempo.")
-        self.get_logger().error(f"Imagen recibida: {self.latest_image is not None}")
+        self.get_logger().error("No se recibieron todas las cámaras y /joint_states a tiempo.")
+        self.get_logger().error(
+            f"Cámaras recibidas: "
+            f"{ {cam_key: cam_key in self.latest_images for cam_key in required_cameras} }"
+        )
         self.get_logger().error(f"JointState recibido: {self.latest_joint_state is not None}")
         return False
 
@@ -186,12 +249,42 @@ class PickPlaceDatasetRecorder(Node):
 
         return result
 
+    def _camera_fieldnames(self) -> List[str]:
+        fields = [
+            "image_path",
+            "timestamp_image",
+        ]
+
+        # Campos explícitos esperados por nuestro pipeline actual.
+        fields.extend(
+            [
+                "image_cabinet_path",
+                "image_top_path",
+                "timestamp_image_cabinet",
+                "timestamp_image_top",
+            ]
+        )
+
+        # Campos genéricos por si en el futuro añadimos más cámaras.
+        for cam_key in self.camera_specs.keys():
+            fields.append(f"image_{cam_key}_path")
+            fields.append(f"timestamp_image_{cam_key}")
+
+        # Quitar duplicados preservando orden.
+        seen = set()
+        unique_fields = []
+        for f in fields:
+            if f not in seen:
+                seen.add(f)
+                unique_fields.append(f)
+
+        return unique_fields
+
     def _fieldnames(self) -> List[str]:
         base_fields = [
             "episode_id",
             "step",
             "timestamp_wall",
-            "timestamp_image",
             "phase",
             "object_color",
             "success",
@@ -209,8 +302,9 @@ class PickPlaceDatasetRecorder(Node):
             "final_cube_z",
             "distance_to_goal_xy",
             "distance_to_goal_z",
+        ]
 
-            "image_path",
+        action_fields = [
             "action_type",
             "action_target_x",
             "action_target_y",
@@ -220,8 +314,6 @@ class PickPlaceDatasetRecorder(Node):
             "action_target_qz",
             "action_target_qw",
             "action_gripper_width",
-
-
         ]
 
         joint_fields = []
@@ -232,8 +324,7 @@ class PickPlaceDatasetRecorder(Node):
         for joint in self.all_tracked_joints:
             joint_fields.append(f"effort_{joint}")
 
-        return base_fields + joint_fields
-
+        return base_fields + self._camera_fieldnames() + action_fields + joint_fields
 
     def validate_final_object_pose(self, goal_xyz) -> bool:
         validation_cfg = self.config.get("validation", {})
@@ -252,7 +343,6 @@ class PickPlaceDatasetRecorder(Node):
         else:
             entity_name = gazebo_cfg.get("blue_cube_entity", "blue_cube")
 
-        # Pequeña espera para que el cubo termine de asentarse tras soltarlo.
         time.sleep(1.0)
 
         pose = get_entity_pose(entity_name, world_name=world_name)
@@ -278,7 +368,6 @@ class PickPlaceDatasetRecorder(Node):
             f"d_xy={self.distance_to_goal_xy:.4f}, d_z={self.distance_to_goal_z:.4f}"
         )
 
-        # 1) Validación principal: dentro del área rectangular del goal.
         goal_area_cfg = validation_cfg.get("goal_area", {})
         area_enabled = bool(goal_area_cfg.get("enabled", True))
 
@@ -308,7 +397,6 @@ class PickPlaceDatasetRecorder(Node):
             if inside_area and z_ok:
                 return True
 
-        # 2) Fallback: distancia al centro del goal.
         tol_xy = float(validation_cfg.get("goal_tolerance_xy", 0.25))
         tol_z = float(validation_cfg.get("goal_tolerance_z", 0.25))
 
@@ -327,6 +415,7 @@ class PickPlaceDatasetRecorder(Node):
         self.csv_writer = csv.DictWriter(
             self.csv_file,
             fieldnames=self._fieldnames(),
+            extrasaction="ignore",
         )
         self.csv_writer.writeheader()
 
@@ -336,6 +425,7 @@ class PickPlaceDatasetRecorder(Node):
             "success": False,
             "failure_reason": "",
             "camera": self.config["camera"],
+            "camera_specs": self.camera_specs,
             "robot": self.config["robot"],
             "gripper": self.config["gripper"],
             "scene": self.config["scene"],
@@ -344,7 +434,8 @@ class PickPlaceDatasetRecorder(Node):
             "episode_dir": str(self.episode_dir),
             "created_at_wall_time": time.time(),
             "format": {
-                "observation_image": "relative path in image_path",
+                "observation_image_primary": "relative path in image_path",
+                "observation_images": "relative paths in image_<camera_key>_path columns",
                 "observation_state": "q_* and dq_* columns",
                 "action": "action_target_* columns",
             },
@@ -378,6 +469,7 @@ class PickPlaceDatasetRecorder(Node):
         metadata["final_cube_pose"] = self.final_cube_pose
         metadata["distance_to_goal_xy"] = self.distance_to_goal_xy
         metadata["distance_to_goal_z"] = self.distance_to_goal_z
+        metadata["camera_specs"] = self.camera_specs
 
         with open(metadata_path, "w") as f:
             json.dump(metadata, f, indent=2)
@@ -390,17 +482,43 @@ class PickPlaceDatasetRecorder(Node):
             self.csv_file.close()
             self.csv_file = None
 
+    def _primary_camera_key(self) -> str:
+        if "cabinet" in self.camera_specs:
+            return "cabinet"
+        if "main" in self.camera_specs:
+            return "main"
+        return list(self.camera_specs.keys())[0]
+
     def sample_callback(self):
         if not self.recording:
             return
 
-        if self.latest_image is None or self.latest_joint_state is None:
+        if self.latest_joint_state is None:
             return
 
-        image_filename = f"{self.config['camera']['camera_name']}_{self.step_idx:06d}.{self.image_format}"
-        image_path = self.images_dir / image_filename
+        for cam_key in self.camera_specs.keys():
+            if cam_key not in self.latest_images:
+                return
 
-        cv2.imwrite(str(image_path), self.latest_image)
+        saved_image_paths = {}
+        saved_image_stamps = {}
+
+        for cam_key, cam_spec in self.camera_specs.items():
+            camera_name = cam_spec["camera_name"]
+            image = self.latest_images[cam_key]
+
+            image_filename = f"{camera_name}_{self.step_idx:06d}.{self.image_format}"
+            image_path = self.images_dir / image_filename
+
+            ok = cv2.imwrite(str(image_path), image)
+            if not ok:
+                self.get_logger().warning(f"No se pudo guardar imagen: {image_path}")
+                return
+
+            saved_image_paths[cam_key] = str(image_path.relative_to(self.episode_dir))
+            saved_image_stamps[cam_key] = self.latest_image_stamps.get(cam_key, "")
+
+        primary_key = self._primary_camera_key()
 
         joint_map = self._joint_map()
 
@@ -417,20 +535,10 @@ class PickPlaceDatasetRecorder(Node):
             "episode_id": self.episode_id,
             "step": self.step_idx,
             "timestamp_wall": time.time(),
-            "timestamp_image": self.latest_image_stamp,
             "phase": self.current_phase,
             "object_color": self.object_color,
             "success": int(self.success),
-            "image_path": str(image_path.relative_to(self.episode_dir)),
-            "action_type": self.current_action.get("type", ""),
-            "action_target_x": target_xyz[0] if target_xyz else "",
-            "action_target_y": target_xyz[1] if target_xyz else "",
-            "action_target_z": target_xyz[2] if target_xyz else "",
-            "action_target_qx": target_quat[0] if target_quat else "",
-            "action_target_qy": target_quat[1] if target_quat else "",
-            "action_target_qz": target_quat[2] if target_quat else "",
-            "action_target_qw": target_quat[3] if target_quat else "",
-            "action_gripper_width": self.current_action.get("target_gripper_width", ""),
+
             "failure_reason": self.failure_reason,
             "num_objects_in_scene": num_objects,
             "target_cube_x": target_pick[0] if len(target_pick) > 0 else "",
@@ -444,7 +552,32 @@ class PickPlaceDatasetRecorder(Node):
             "final_cube_z": final_pose[2] if len(final_pose) > 2 else "",
             "distance_to_goal_xy": self.distance_to_goal_xy if self.distance_to_goal_xy is not None else "",
             "distance_to_goal_z": self.distance_to_goal_z if self.distance_to_goal_z is not None else "",
+
+            # Compatibilidad con formato anterior.
+            "image_path": saved_image_paths.get(primary_key, ""),
+            "timestamp_image": saved_image_stamps.get(primary_key, ""),
+
+            # Campos explícitos usados por nuestro pipeline actual.
+            "image_cabinet_path": saved_image_paths.get("cabinet", ""),
+            "image_top_path": saved_image_paths.get("top", ""),
+            "timestamp_image_cabinet": saved_image_stamps.get("cabinet", ""),
+            "timestamp_image_top": saved_image_stamps.get("top", ""),
+
+            "action_type": self.current_action.get("type", ""),
+            "action_target_x": target_xyz[0] if target_xyz else "",
+            "action_target_y": target_xyz[1] if target_xyz else "",
+            "action_target_z": target_xyz[2] if target_xyz else "",
+            "action_target_qx": target_quat[0] if target_quat else "",
+            "action_target_qy": target_quat[1] if target_quat else "",
+            "action_target_qz": target_quat[2] if target_quat else "",
+            "action_target_qw": target_quat[3] if target_quat else "",
+            "action_gripper_width": self.current_action.get("target_gripper_width", ""),
         }
+
+        # Campos genéricos por cámara.
+        for cam_key in self.camera_specs.keys():
+            row[f"image_{cam_key}_path"] = saved_image_paths.get(cam_key, "")
+            row[f"timestamp_image_{cam_key}"] = saved_image_stamps.get(cam_key, "")
 
         for joint in self.all_tracked_joints:
             row[f"q_{joint}"] = joint_map.get(joint, {}).get("position", "")
@@ -482,7 +615,7 @@ class PickPlaceDatasetRecorder(Node):
                     text=True,
                     timeout=timeout_sec,
                 )
-            except subprocess.TimeoutExpired as exc:
+            except subprocess.TimeoutExpired:
                 self.get_logger().error(
                     f"[{phase}] Timeout tras {timeout_sec:.1f}s en intento {attempt_label}"
                 )
@@ -559,11 +692,6 @@ class PickPlaceDatasetRecorder(Node):
         timeout_sec: float = 5.0,
         tolerance: float = 0.004,
     ) -> bool:
-        """
-        Espera a que ambos dedos estén cerca del objetivo.
-        No exige exactitud absoluta porque Gazebo puede dejar pequeñas diferencias
-        por contacto con el cubo.
-        """
         target = float(width)
         start = time.time()
 
@@ -593,12 +721,7 @@ class PickPlaceDatasetRecorder(Node):
 
         return False
 
-
     def publish_gripper_trajectory(self, width: float, duration: float):
-        """
-        Publica directamente una trayectoria al JointTrajectoryController del gripper.
-        Evita depender del cliente externo move_gripper y de timeouts del action server.
-        """
         msg = JointTrajectory()
         msg.joint_names = [
             "fp3_finger_joint1",
@@ -615,12 +738,9 @@ class PickPlaceDatasetRecorder(Node):
 
         msg.points.append(point)
 
-        # Publicar varias veces aumenta robustez si el controlador acaba de activarse
-        # o si hay un pequeño retraso de DDS.
         for _ in range(5):
             self.gripper_pub.publish(msg)
             time.sleep(0.05)
-
 
     def move_gripper(self, width: float, phase: str) -> bool:
         safe_min = float(self.config["gripper"]["safe_min_width"])
@@ -647,14 +767,13 @@ class PickPlaceDatasetRecorder(Node):
             self.get_logger().error(f"[{phase}] Error publicando gripper: {exc}")
             return False
 
-        # Espera física del movimiento.
         time.sleep(duration + float(self.config["motion"]["settle_after_gripper_sec"]))
 
-        # En apertura inicial y liberación sí conviene exigir apertura.
-        # En cierre sobre cubo NO conviene exigir width exacto, porque el cubo bloquea
-        # mecánicamente el cierre y eso es justo lo deseado.
         if "close" in phase or "grasp" in phase:
-            self.get_logger().info(f"[{phase}] Comando de cierre enviado. No exijo posición exacta por contacto con cubo.")
+            self.get_logger().info(
+                f"[{phase}] Comando de cierre enviado. "
+                "No exijo posición exacta por contacto con cubo."
+            )
             return True
 
         reached = self.wait_for_gripper_position(

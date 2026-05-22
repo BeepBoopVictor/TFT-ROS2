@@ -1,11 +1,22 @@
 dataset:
-  root_dir: "/root/tfg_panda_ws/datasets/fp3_pick_place_v3"
+  # root_dir: "/root/tfg_panda_ws/datasets/fp3_pick_place_v3"
+  # root_dir: "/root/tfg_panda_ws/datasets/fp3_pick_place_v4"
+  root_dir: "/root/tfg_panda_ws/datasets/fp3_pick_place_v6"
   sample_hz: 5.0
   image_format: "png"
 
 camera:
   rgb_topic: "/camera_cabinet/image"
   camera_name: "camera_cabinet"
+
+  cameras:
+    cabinet:
+      rgb_topic: "/camera_cabinet/image"
+      camera_name: "camera_cabinet"
+
+    top:
+      rgb_topic: "/camera_top_conveyor/image"
+      camera_name: "camera_top_conveyor"
 
 gazebo:
   world_name: "fp3_pick_place_world"
@@ -49,12 +60,12 @@ scene:
 
   red_cube:
     color: "red"
-    default_pick_xyz: [0.60, 0.18, 0.23]
+    default_pick_xyz: [0.40, 0.18, 0.23]
     goal_xyz: [0.05, 0.55, 0.23]
 
   blue_cube:
     color: "blue"
-    default_pick_xyz: [0.60, -0.18, 0.23]
+    default_pick_xyz: [0.40, -0.18, 0.23]
     goal_xyz: [0.05, -0.55, 0.23]
 
 randomization:
@@ -63,14 +74,19 @@ randomization:
   # Zona segura inicial dentro de la cinta larga.
   # Más adelante podemos ampliar x_min/x_max usando todo el largo de 2.80.
   conveyor_spawn:
-    x_min: 0.48
-    x_max: 0.72
-    y_min: -0.22
+    # x_min: 0.39
+    x_min: 0.28
+    # x_max: 0.41
+    x_max: 0.56
+    # y_min: 0.17
+    y_min: 0.08
+    # y_max: 0.19
     y_max: 0.22
     z: 0.24
 
   probability_two_cubes: 0.35
-  min_cube_distance_xy: 0.18
+  # min_cube_distance_xy: 0.18
+  min_cube_distance_xy: 0.24
 
 motion:
   pregrasp_z: 0.40
@@ -113,3 +129,86 @@ validation:
 
 recording:
   keep_failed_episodes: true
+
+clean_motion:
+  # Nueva referencia: cinta acercada.
+  reference_x: 0.40
+
+  joint1_gain: 1.0
+  joint1_offset: 0.0
+
+  # Pinza recta.
+  gripper_yaw: 0.0
+
+  # Espera tras abrir pinza antes de iniciar movimiento del brazo.
+  settle_after_initial_open: 0.4
+
+  # Corrección por x. Menos agresiva que antes porque los cubos están más cerca.
+  reach_q2_gain: -0.45
+  reach_q4_gain: -0.35
+  reach_q6_gain: 0.30
+
+  # Corrección lateral por y.
+  lateral_q3_gain: 0.08
+  lateral_q5_gain: 0.06
+
+  # Fase de avance hasta quedar encima del cubo.
+  # Para x≈0.40 no debe ser tan grande como antes.
+  advance:
+    q2_delta: -0.12
+    q4_delta: -0.20
+    q6_delta: 0.16
+
+  # Bajada después de estar encima.
+  descend:
+    q2_delta: -0.32
+    q4_delta: -0.58
+    q6_delta: 0.48
+
+  # Subida manteniendo una geometría limpia.
+  lift:
+    q2_delta: -0.08
+    q4_delta: -0.14
+    q6_delta: 0.18
+
+  durations:
+    face: 1.5
+    slide: 2.5
+    down: 2.2
+    gripper: 1.5
+    up: 2.0
+
+
+moveit_tcp_motion:
+  stream_min_dt: 0.08
+  stream_max_dt: 0.35
+
+  settle_after_segment: 1.0
+  hold_after_segment: 1.5
+  fresh_state_wait_after_segment: 1.0
+  settle_after_gripper: 1.2
+
+  arm_stable_time: 0.8
+  arm_stable_timeout: 3.5
+  arm_stable_time_after_gripper: 0.6
+  arm_stable_timeout_after_gripper: 2.5
+  arm_stable_velocity_tol: 0.012
+  arm_stable_position_tol: 0.0025
+
+  trim_skip_tolerance: 0.04
+  trim_max_initial_error: 0.35
+  skip_reached_point_tolerance: 0.035
+
+  grasp_z_offset: 0.01
+  warn_tcp_error: 0.25
+
+  durations:
+    open: 1.4
+    pregrasp: 4.5
+    grasp: 4.7
+    close: 2.2
+    lift: 4.2
+    preplace: 5.7
+    place: 4.7
+    release: 2.0
+    retreat: 4.2

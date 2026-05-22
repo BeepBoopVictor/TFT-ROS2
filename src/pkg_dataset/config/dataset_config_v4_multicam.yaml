@@ -1,0 +1,115 @@
+dataset:
+  root_dir: "/root/tfg_panda_ws/datasets/fp3_pick_place_v4"
+  sample_hz: 5.0
+  image_format: "png"
+
+camera:
+  rgb_topic: "/camera_cabinet/image"
+  camera_name: "camera_cabinet"
+
+gazebo:
+  world_name: "fp3_pick_place_world"
+  red_cube_entity: "red_cube"
+  blue_cube_entity: "blue_cube"
+  hidden_xyz: [2.0, 2.0, 0.50]
+  settle_after_reset_sec: 1.0
+
+robot:
+  planning_frame: "world"
+  tcp_frame: "fp3_hand_tcp"
+
+  arm_joints:
+    - fp3_joint1
+    - fp3_joint2
+    - fp3_joint3
+    - fp3_joint4
+    - fp3_joint5
+    - fp3_joint6
+    - fp3_joint7
+
+  gripper_joints:
+    - fp3_finger_joint1
+    - fp3_finger_joint2
+
+  grasp_down_quat:
+    qx: 1.0
+    qy: 0.0
+    qz: 0.0
+    qw: 0.0
+
+gripper:
+  open_width: 0.039
+  grasp_width: 0.010
+  safe_min_width: 0.003
+  command_duration: 2.0
+  position_tolerance: 0.006
+
+scene:
+  conveyor_length: 2.80
+
+  red_cube:
+    color: "red"
+    default_pick_xyz: [0.60, 0.18, 0.23]
+    goal_xyz: [0.05, 0.55, 0.23]
+
+  blue_cube:
+    color: "blue"
+    default_pick_xyz: [0.60, -0.18, 0.23]
+    goal_xyz: [0.05, -0.55, 0.23]
+
+randomization:
+  enabled: true
+
+  # Zona segura inicial dentro de la cinta larga.
+  # Más adelante podemos ampliar x_min/x_max usando todo el largo de 2.80.
+  conveyor_spawn:
+    x_min: 0.48
+    x_max: 0.72
+    y_min: -0.22
+    y_max: 0.22
+    z: 0.24
+
+  probability_two_cubes: 0.35
+  min_cube_distance_xy: 0.18
+
+motion:
+  pregrasp_z: 0.40
+  lift_z: 0.48
+  preplace_z: 0.40
+  retreat_z: 0.48
+
+  settle_after_motion_sec: 0.5
+  settle_after_gripper_sec: 0.5
+
+  move_retries: 1
+  move_timeout_sec: 90.0
+
+validation:
+  enabled: true
+
+  # Ahora sí queremos exigir pose real.
+  require_pose_query: true
+
+  # Validación por área rectangular del goal.
+  # Ajusta estos valores al tamaño real visual de tus goals.
+  goal_area:
+    enabled: true
+
+    red:
+      center_xyz: [0.05, 0.55, 0.23]
+      size_xy: [0.36, 0.36]
+
+    blue:
+      center_xyz: [0.05, -0.55, 0.23]
+      size_xy: [0.36, 0.36]
+
+    margin_xy: 0.04
+
+  # Fallback por distancia al centro.
+  # Lo dejamos amplio para no penalizar si cae dentro del área,
+  # pero lejos del centro exacto.
+  goal_tolerance_xy: 0.25
+  goal_tolerance_z: 0.25
+
+recording:
+  keep_failed_episodes: true

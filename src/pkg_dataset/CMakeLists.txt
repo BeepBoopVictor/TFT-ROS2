@@ -13,6 +13,8 @@ install(
 install(
   PROGRAMS
     scripts/record_pick_place_episode.py
+    scripts/record_pick_place_episode_clean.py
+    scripts/record_pick_place_episode_moveit_tcp.py
     scripts/record_n_episodes.py
     scripts/episode_validator.py
     scripts/build_dataset_index.py
@@ -23,6 +25,7 @@ install(
     scripts/build_manifest.py
     scripts/split_dataset.py
     scripts/export_lerobot_like_dataset.py
+    scripts/export_lerobot_act_dataset.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
