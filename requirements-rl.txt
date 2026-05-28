@@ -1,0 +1,31 @@
+# requirements-rl.txt
+
+numpy==1.24.4
+scipy==1.10.1
+opencv-python-headless==4.8.1.78
+numba==0.57.1
+llvmlite==0.40.1
+gymnasium==0.29.1
+tianshou==0.5.1
+protobuf<5
+tensorboard
+
+
+cloudpickle
+farama-notifications
+h5py
+pettingzoo>=1.22
+tqdm
+absl-py
+grpcio
+markdown
+tensorboard-data-server
+werkzeug
+packaging
+matplotlib
+pandas
+
+
+# torch
+# torchvision
+# torchaudio
