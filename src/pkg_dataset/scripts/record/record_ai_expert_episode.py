@@ -416,18 +416,116 @@ class AIExpertRecorder(Node):
         return resp.solution.joint_trajectory
 
     def execute_traj_recorded(self, traj, label: str, total_duration: float):
+        """Ejecuta la trayectoria publicando UNA sola JointTrajectory con todos los puntos.
+
+        El bug que esto arregla: la version anterior publicaba una JointTrajectory NUEVA
+        por cada waypoint cada `dt` segundos. Cada publish interrumpia el seguimiento del
+        controlador y empezaba una trayectoria nueva con un nuevo target. El robot nunca
+        alcanzaba el endpoint porque siempre se le reemplazaba el objetivo antes. Por eso
+        los TCP_after del log estaban muy lejos de los target.
+
+        Ahora se publica UNA JointTrajectory con todos los puntos en sus time_from_start
+        proporcionales al total_duration. El joint_trajectory_controller la interpola y la
+        ejecuta entera. Mientras tanto, mantenemos self.current_action_arm actualizado con
+        el waypoint vigente para que los frames grabados contengan la accion correcta.
+        """
         pts = list(traj.points)
         if not pts:
             raise RuntimeError(f"{label}: sin puntos")
-        dt = max(0.08, float(total_duration) / max(1, len(pts)))
-        print(f"[AI_REC] execute {label}: {len(pts)} points, total_duration={total_duration:.2f}s, dt={dt:.3f}")
-        for p in pts:
-            q = list(p.positions[:7])
-            if not self.args.dry_run:
-                self.publish_arm(q, dt)
+        n = len(pts)
+
+        if self.args.dry_run:
+            dt = max(0.08, float(total_duration) / max(1, n))
+            print(f"[AI_REC] execute {label} (dry-run): {n} points, total_duration={total_duration:.2f}s, dt={dt:.3f}")
+            for p in pts:
+                self.current_action_arm = np.asarray(p.positions[:7], dtype=np.float32)
+                self.spin_some(dt)
+            return
+
+        # Construir UNA sola JointTrajectory con todos los puntos.
+        msg = JointTrajectory()
+        msg.joint_names = ARM_JOINTS
+        times = []
+        for i, p in enumerate(pts):
+            q = np.clip(np.asarray(p.positions[:7], dtype=np.float32), ARM_LOW, ARM_HIGH)
+            pt = JointTrajectoryPoint()
+            pt.positions = [float(x) for x in q]
+            # time_from_start proporcional al total_duration; primer waypoint NO en t=0
+            # (el controlador rechaza puntos con time_from_start=0 si ya esta en t=0).
+            t = (i + 1) / float(n) * float(total_duration)
+            pt.time_from_start.sec = int(t)
+            pt.time_from_start.nanosec = int((t - int(t)) * 1e9)
+            msg.points.append(pt)
+            times.append(t)
+
+        # Publicar 2-3 veces para tolerar perdidas de QoS.
+        for _ in range(2):
+            self.arm_pub.publish(msg)
+            self.spin_some(0.02)
+        print(f"[AI_REC] execute {label}: {n} points sent as single trajectory, duration={total_duration:.2f}s")
+
+        # Esperar a que termine la trayectoria, actualizando current_action_arm con el
+        # waypoint vigente para que los frames grabados contengan la accion correcta.
+        start = now_sec()
+        end = start + float(total_duration)
+        last_idx = -1
+        while rclpy.ok() and now_sec() < end:
+            t_rel = now_sec() - start
+            idx = n - 1
+            for i, t in enumerate(times):
+                if t_rel <= t:
+                    idx = i
+                    break
+            if idx != last_idx:
+                self.current_action_arm = np.asarray(pts[idx].positions[:7], dtype=np.float32)
+                last_idx = idx
+            self.spin_some(0.05)
+
+        # Asegurar que el ultimo waypoint queda registrado como accion vigente.
+        self.current_action_arm = np.asarray(pts[-1].positions[:7], dtype=np.float32)
+
+    def wait_arm_at_target(self, target_q: np.ndarray, tolerance: float,
+                           timeout: float, stable_sec: float, label: str = "") -> bool:
+        """Espera a que self.last_arm_q este cerca de target_q de forma estable.
+
+        Esto es esencial despues de cada movimiento. Sin esto, la siguiente fase del
+        experto arranca aunque el brazo siga moviendose -> el TCP nunca llega al
+        endpoint y las demos son fisicamente erroneas (aunque el script las marque
+        como success).
+        """
+        target_q = np.asarray(target_q[:7], dtype=np.float32)
+        start = now_sec()
+        stable_start = None
+        best_err = float("inf")
+        last_print = 0.0
+
+        while rclpy.ok() and (now_sec() - start) < float(timeout):
+            if self.last_arm_q is None:
+                self.spin_some(0.05)
+                continue
+            err = float(np.linalg.norm(np.asarray(self.last_arm_q[:7], dtype=np.float32) - target_q))
+            best_err = min(best_err, err)
+            t = now_sec()
+
+            if err <= float(tolerance):
+                if stable_start is None:
+                    stable_start = t
+                stable_for = t - stable_start
+                if stable_for >= float(stable_sec):
+                    print(f"[AI_REC] {label} endpoint alcanzado err={err:.3f} stable_for={stable_for:.2f}s")
+                    return True
             else:
-                self.current_action_arm = np.asarray(q, dtype=np.float32)
-            self.spin_some(dt)
+                stable_start = None
+
+            if (t - last_print) >= 0.5:
+                stable_for = 0.0 if stable_start is None else (t - stable_start)
+                print(f"[AI_REC] {label} esperando endpoint... err={err:.3f} tol={tolerance:.3f} stable={stable_for:.2f}/{stable_sec:.2f}s")
+                last_print = t
+
+            self.spin_some(0.05)
+
+        print(f"[AI_REC][WARN] {label} timeout esperando endpoint. best_err={best_err:.3f}")
+        return False
 
     def move_tcp(self, phase: str, target: XYZ, duration: float):
         self.set_phase(phase, duration)
@@ -435,6 +533,20 @@ class AIExpertRecorder(Node):
         print(f"[AI_REC] {phase} TCP before={self.round_vec(before)}")
         traj = self.compute_cartesian(target, phase)
         self.execute_traj_recorded(traj, phase, duration)
+
+        # Esperar a que el brazo llegue al ultimo waypoint de la trayectoria.
+        # Sin esto, la siguiente fase empieza con el brazo todavia en movimiento
+        # y nunca llega al endpoint deseado.
+        if traj.points and not self.args.dry_run:
+            target_q = np.asarray(traj.points[-1].positions[:7], dtype=np.float32)
+            self.wait_arm_at_target(
+                target_q,
+                tolerance=float(self.args.move_completion_tolerance),
+                timeout=float(self.args.move_completion_timeout),
+                stable_sec=float(self.args.move_completion_stable_sec),
+                label=phase,
+            )
+
         self.spin_some(0.2)
         after = self.get_tcp_xyz()
         print(f"[AI_REC] {phase} TCP after ={self.round_vec(after)}")
@@ -914,6 +1026,18 @@ def build_parser():
     p.add_argument("--retreat-duration", type=float, default=1.5)
     p.add_argument("--gripper-steps", type=int, default=10)
 
+    # Multiplicador global para TODAS las duraciones de fase. Si el robot va demasiado
+    # rapido y no termina las fases (TCP_after lejos del target), subir esto a 1.5 o 2.0.
+    # Default 1.0 mantiene los tiempos originales.
+    p.add_argument("--phase-time-scale", type=float, default=1.0)
+
+    # Espera al final de cada move_tcp a que el brazo llegue al ultimo waypoint.
+    # Tolerance es la norma del error en espacio de joints (rad). Para un Franka, 0.05 rad
+    # equivale a unos 3 grados acumulados.
+    p.add_argument("--move-completion-tolerance", type=float, default=0.05)
+    p.add_argument("--move-completion-timeout", type=float, default=3.0)
+    p.add_argument("--move-completion-stable-sec", type=float, default=0.2)
+
     p.add_argument("--min-fraction", type=float, default=0.70)
     p.add_argument("--max-step", type=float, default=0.008)
     p.add_argument("--jump-threshold", type=float, default=0.0)
@@ -944,6 +1068,33 @@ def build_parser():
 
 def main():
     args = build_parser().parse_args()
+
+    # Aplicar phase_time_scale a TODAS las duraciones de fase.
+    # Esto permite hacer una corrida lenta y conservadora desde la CLI sin tocar 13
+    # argumentos individuales: --phase-time-scale 1.5 lo hace todo 50% mas lento.
+    s = float(args.phase_time_scale)
+    if s != 1.0:
+        scaled_attrs = [
+            "open_initial_duration",
+            "move_to_pregrasp_duration",
+            "descend_to_grasp_duration",
+            "grasp_contact_pause_duration",
+            "close_gripper_duration",
+            "post_grasp_hold_duration",
+            "lift_duration",
+            "lift_settle_duration",
+            "move_to_preplace_duration",
+            "descend_to_place_duration",
+            "place_contact_pause_duration",
+            "open_gripper_duration",
+            "retreat_duration",
+        ]
+        print(f"[AI_REC] phase_time_scale={s:.2f}: escalando duraciones de fase")
+        for attr in scaled_attrs:
+            old = getattr(args, attr)
+            setattr(args, attr, old * s)
+            print(f"[AI_REC]   {attr}: {old:.2f} -> {old*s:.2f}")
+
     rclpy.init()
     node = AIExpertRecorder(args)
     try:

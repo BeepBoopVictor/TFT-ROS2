@@ -3,7 +3,16 @@
 Batch recorder for the high-quality AI dataset (v3 atomic accepted/rejected episodes).
 
 It calls record_ai_expert_episode.py repeatedly, optionally randomizing pick positions.
-For Phase 1, use --mode fixed for 20 debug episodes, then --mode narrow for 100 high-quality episodes.
+
+Modos disponibles:
+    fixed   - posicion del pick fija (--fixed-pick)
+    narrow  - 4x5 cm  (x in [0.38,0.42], y in [0.15,0.20]) -- demasiado estrecho
+    wide    - 8x8 cm  (x in [0.36,0.44], y in [0.13,0.21]) -- recomendado
+    medium  - 12x15 cm (x in [0.35,0.47], y in [0.10,0.25]) -- mucha variabilidad
+
+Para entrenamiento con ACT, usa --mode wide. Es el sweet spot entre cubrir suficiente
+espacio visual para que la red use las camaras y manejar episodios alcanzables por el
+experto cinematico.
 
 If gazebo_entity_utils is available, it resets the red/blue cube pose before each episode.
 """
@@ -17,7 +26,7 @@ import time
 from pathlib import Path
 
 
-DEFAULT_EPISODE_SCRIPT = "/root/tfg_panda_ws/record_ai_expert_episode.py"
+DEFAULT_EPISODE_SCRIPT = "/root/tfg_panda_ws/src/pkg_dataset/scripts/record/record_ai_expert_episode.py"
 
 
 def parse_xyz(text):
@@ -28,9 +37,7 @@ def parse_xyz(text):
 
 
 def try_reset_scene(pick, object_color, world_name, hidden_xyz):
-    """Best-effort reset of cube poses using the helper already used by pkg_dataset."""
     try:
-        # The helper is available in the ROS package scripts in your workspace when env_ros.sh is sourced.
         sys.path.append("/root/tfg_panda_ws/src/pkg_dataset/scripts")
         from gazebo_entity_utils import set_entity_pose, hide_entity
     except Exception as exc:
@@ -59,11 +66,19 @@ def sample_pick(args):
     if args.mode == "fixed":
         return list(args.fixed_pick)
     if args.mode == "narrow":
+
         return [
             random.uniform(0.38, 0.42),
             random.uniform(0.15, 0.20),
             args.pick_z,
         ]
+    if args.mode == "wide":
+        return [
+            random.uniform(0.36, 0.44),
+            random.uniform(0.13, 0.21),
+            args.pick_z,
+        ]
+
     if args.mode == "medium":
         return [
             random.uniform(0.35, 0.47),
@@ -75,7 +90,7 @@ def sample_pick(args):
 
 def run_episode(args, episode_id, pick, goal, object_color):
     cmd = [
-        "/usr/bin/python3",
+        sys.executable,
         args.episode_script,
         "--dataset-root", args.dataset_root,
         "--episode-id", str(episode_id),
@@ -100,6 +115,11 @@ def run_episode(args, episode_id, pick, goal, object_color):
         "--home-start-tolerance", str(args.home_start_tolerance),
         "--home-stable-sec", str(args.home_stable_sec),
         "--hand-stable-sec", str(args.hand_stable_sec),
+        # Nuevos: control de velocidad y wait al endpoint
+        "--phase-time-scale", str(args.phase_time_scale),
+        "--move-completion-tolerance", str(args.move_completion_tolerance),
+        "--move-completion-timeout", str(args.move_completion_timeout),
+        "--move-completion-stable-sec", str(args.move_completion_stable_sec),
     ]
     if args.keep_rejected:
         cmd.append("--keep-rejected")
@@ -127,10 +147,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--dataset-root", default="/root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1")
     p.add_argument("--episode-script", default=DEFAULT_EPISODE_SCRIPT)
-    p.add_argument("--target-successes", type=int, default=20)
-    p.add_argument("--max-attempts", type=int, default=30)
+    p.add_argument("--target-successes", type=int, default=50)
+    p.add_argument("--max-attempts", type=int, default=75)
     p.add_argument("--start-id", type=int, default=0)
-    p.add_argument("--mode", choices=["fixed", "narrow", "medium"], default="fixed")
+    p.add_argument("--mode", choices=["fixed", "narrow", "wide", "medium"], default="wide")
     p.add_argument("--fixed-pick", type=parse_xyz, default=[0.40, 0.18, 0.235])
     p.add_argument("--goal", type=parse_xyz, default=[0.05, 0.55, 0.23])
     p.add_argument("--object-color", choices=["red", "blue"], default="red")
@@ -140,7 +160,8 @@ def main():
     p.add_argument("--min-frames", type=int, default=80)
     p.add_argument("--sleep-sec", type=float, default=1.5)
     p.add_argument("--seed", type=int, default=7)
-    p.add_argument("--reset-scene", action="store_true", help="Reset cube pose before every episode using gazebo_entity_utils.")
+    p.add_argument("--reset-scene", action="store_true",
+                   help="Reset cube pose before every episode using gazebo_entity_utils.")
     p.add_argument("--world-name", default="default")
     p.add_argument("--hidden-xyz", type=parse_xyz, default=[2.0, 2.0, 0.5])
 
@@ -159,6 +180,15 @@ def main():
     p.add_argument("--hand-stable-sec", type=float, default=0.30)
     p.add_argument("--keep-rejected", action="store_true",
                    help="Keep failed episodes under rejected_episodes/. Accepted training samples only go under episodes/.")
+
+    p.add_argument("--phase-time-scale", type=float, default=1.0,
+                   help="Multiplicador global de TODAS las duraciones de fase. 1.5 = 50% mas lento.")
+    p.add_argument("--move-completion-tolerance", type=float, default=0.05,
+                   help="Norma del error en joints (rad) para aceptar que el brazo llego al waypoint final.")
+    p.add_argument("--move-completion-timeout", type=float, default=3.0,
+                   help="Timeout (s) para esperar a que el brazo llegue al waypoint final.")
+    p.add_argument("--move-completion-stable-sec", type=float, default=0.2,
+                   help="Tiempo (s) que el brazo debe estar estable cerca del waypoint para considerar la fase completa.")
     args = p.parse_args()
 
     random.seed(args.seed)
@@ -181,8 +211,6 @@ def main():
         print(f"\n[AI_BATCH] Attempt {attempts}/{args.max_attempts} episode_id={episode_id} successes={successes}/{args.target_successes}")
         print(f"[AI_BATCH] pick={[round(float(v),4) for v in pick]} goal={[round(float(v),4) for v in goal]} color={color}")
 
-        # Remove stale output for this exact attempt so old metadata can never be mistaken
-        # for the result of the current run.
         name = f"episode_{episode_id:06d}_{color}"
         for sub in ["episodes", "rejected_episodes", "_tmp_recording"]:
             pth = Path(args.dataset_root) / sub / name

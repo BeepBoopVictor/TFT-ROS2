@@ -1,104 +1,511 @@
 # pkg_dataset
 
-Paquete encargado de la generación, validación, preparación y exportación de datasets de demostraciones para el robot Franka Panda / FP3 en el entorno simulado del proyecto:
+Paquete encargado de la generación de demostraciones, exportación a LeRobot v3, entrenamiento de ACT, despliegue de la política entrenada y generación de material experimental para el robot Franka Panda / FP3 en el entorno simulado del proyecto:
 
 **Implementación de modelos de inteligencia artificial en un entorno robótico simulado**
 
-Este paquete permite grabar episodios de tipo Pick and Place mediante un experto clásico basado en ROS 2, Gazebo/Ignition Fortress y MoveIt 2. El resultado final se exporta a un formato compatible con LeRobot/ACT para entrenar políticas de aprendizaje por imitación.
+Este paquete permite grabar episodios de tipo Pick-and-Place mediante un experto clásico basado en ROS 2 Humble, Gazebo/Ignition Fortress y MoveIt 2. El dataset final se exporta a formato LeRobot v3 para entrenar una política de aprendizaje por imitación con ACT (*Action Chunking with Transformers*) usando la librería LeRobot de Hugging Face.
 
 ---
 
 ## Descripción general
 
-El paquete `pkg_dataset` implementa el pipeline completo de creación de datasets:
+El paquete `pkg_dataset` implementa el pipeline completo de aprendizaje por imitación utilizado en el proyecto:
 
-- Ejecución automática de un experto clásico.
-- Grabación de episodios Pick and Place.
-- Captura de estados articulares, pose TCP, fases, acciones e imágenes.
-- Validación del dataset bruto.
-- Preparación de columnas para entrenamiento.
-- Exportación a formato LeRobot/ACT multimodal.
-- Aplicación de parches de compatibilidad con LeRobot.
-- Validación final del dataset exportado.
+- Ejecución automática de un experto clásico de Pick-and-Place.
+- Grabación de episodios del cubo rojo en Gazebo Fortress.
+- Captura de estados articulares, acciones e imágenes de dos cámaras.
+- Reset de la escena entre episodios sin reiniciar Gazebo.
+- Exportación del dataset bruto a formato LeRobot v3.
+- Entrenamiento de ACT mediante `lerobot-train`.
+- Despliegue de la política entrenada en el simulador mediante servidor ZMQ y nodo ROS 2.
+- Verificación de la normalización manual necesaria para inferencia.
+- Generación de gráficas y vídeo para la memoria y defensa del TFG.
 
-El dataset generado se utiliza para entrenar modelos de aprendizaje por imitación, concretamente ACT mediante LeRobot.
+A diferencia de versiones anteriores del paquete, la observación del modelo no incluye información privilegiada como `target_xyz`, `goal_xyz` o `phase_one_hot`. La posición del cubo debe inferirse a partir de las imágenes de las cámaras.
 
 ---
 
 ## Relación con otros paquetes
 
-`pkg_dataset` no funciona de forma aislada. Depende del entorno simulado y de la planificación/control proporcionados por otros paquetes del workspace.
+`pkg_dataset` no funciona de forma aislada. Depende del entorno simulado, la descripción del robot y la planificación/control proporcionados por otros paquetes del workspace.
 
 | Paquete | Función |
 |---|---|
 | `pkg_description` | Define el robot Franka Panda / FP3 mediante URDF/Xacro, mallas, límites, cinemática e inercias. |
-| `pkg_gazebo` | Lanza Gazebo, el mundo, los cubos, las cámaras y los bridges ROS-Gazebo. |
-| `pkg_moveit_config` | Lanza MoveIt 2, los controladores y los servicios de planificación necesarios. |
-| `pkg_dataset` | Ejecuta el experto, graba episodios, valida, prepara y exporta el dataset. |
+| `pkg_gazebo` | Lanza el mundo de Gazebo, los cubos, las cámaras y los bridges ROS-Gazebo. |
+| `pkg_moveit_config` | Lanza MoveIt 2, los controladores y el servicio `/compute_cartesian_path`. |
+| `pkg_dataset` | Graba demostraciones, exporta a LeRobot v3, entrena ACT, despliega la policy y genera figuras. |
 
-Para grabar episodios correctamente, deben estar activos:
+Para grabar, entrenar y desplegar correctamente deben estar disponibles:
 
+- ROS 2 Humble.
 - Gazebo/Ignition Fortress.
+- MoveIt 2.
 - El mundo `fp3_pick_place_world`.
 - El robot `fp3`.
-- Los cubos rojo y azul.
-- Los bridges de cámaras y poses.
+- El cubo rojo de Pick-and-Place.
+- Las cámaras `top conveyor` y `cabinet`.
 - Los controladores del brazo y la pinza.
-- MoveIt 2 y el servicio `/compute_cartesian_path`.
+- El servicio cartesiano `/compute_cartesian_path`.
 
 ---
 
-## Preparar entorno
+## Entornos Python
 
-Antes de ejecutar cualquier comando, cargar el entorno del workspace:
+El paquete utiliza dos entornos Python diferentes debido a incompatibilidades entre las versiones necesarias para ROS 2 y LeRobot.
+
+| Entorno | Python | Activación | Uso principal |
+|---|---:|---|---|
+| `lerobot_venv` | 3.12 | `use-il` | Exportación, entrenamiento, servidor de policy ACT y generación de figuras. |
+| `lerobot_ros2_venv` | 3.10 | `use-ros2-il` | Grabación de episodios, nodo ROS 2 de inferencia y reset de escena. |
+
+El entorno `lerobot_venv` contiene principalmente `lerobot`, `torch` y `pyzmq`.
+
+El entorno `lerobot_ros2_venv` contiene principalmente `rclpy`, `pyzmq` y `pyarrow`.
+
+Para scripts ROS 2 se recomienda usar siempre:
 
 ```bash
-source /root/tfg_panda_ws/tools/env_ros.sh
+use-ros2-il
 ```
 
-Este script prepara el entorno de ROS 2 Humble, Gazebo/Ignition, MoveIt y los paquetes del proyecto.
-
-Para tareas relacionadas con exportación o validación LeRobot, debe activarse también el entorno Python correspondiente:
+Para scripts de LeRobot, entrenamiento e inferencia del servidor se recomienda usar:
 
 ```bash
-source /root/lerobot_venv/bin/activate
+use-il
 ```
+
+---
 
 ## Estructura del paquete
 
 ```text
 pkg_dataset/
-├── README.md
-├── package.xml
 ├── CMakeLists.txt
+├── package.xml
+├── README.md
 └── scripts/
+    ├── gazebo_entity_utils.py
+    ├── reset_scene.py
+    ├── generate_tfg_figures.py
+    ├── test_manual_normalize.py
+    ├── train_act.sh
     ├── record/
     │   ├── record_ai_expert_episode.py
     │   └── record_ai_dataset.py
-    │
-    ├── validate/
-    │   ├── validate_ai_dataset.py
-    │   └── audit_ai_dataset_phase1.py
-    │
-    ├── prepare/
-    │   └── prepare_ai_dataset_phase1_for_training.py
-    │
-    └── export/
-        ├── export_lerobot_ai_v1_multimodal.py
-        ├── validate_lerobot_ai_v1_export.py
-        └── patches/
-            ├── patch_lerobot_ai_v1_train_schema.py
-            ├── patch_lerobot_ai_v1_video_metadata.py
-            ├── patch_lerobot_ai_v1_video_timestamps.py
-            ├── patch_lerobot_ai_v1_info_video_path.py
-            └── patch_lerobot_ai_v1_visual_stats.py
+    ├── export/
+    │   └── export_to_lerobot.py
+    └── inference/
+        ├── act_policy_server.py
+        └── infer_act_node.py
+```
+
+---
+
+## Descripción de scripts
+
+### Grabación de un episodio experto
+
+```text
+scripts/record/record_ai_expert_episode.py
+```
+
+Este script ejecuta un único episodio experto de Pick-and-Place del cubo rojo.
+
+Sus funciones principales son:
+
+- Llevar el robot a HOME.
+- Abrir la pinza.
+- Calcular trayectorias cartesianas con MoveIt 2 mediante `/compute_cartesian_path`.
+- Ejecutar las fases del experto.
+- Publicar una `JointTrajectory` completa por fase, no comandos punto a punto.
+- Esperar a que el brazo alcance el endpoint antes de continuar mediante `wait_arm_at_target`.
+- Grabar estados articulares, acciones e imágenes a 5 Hz.
+- Validar el episodio antes de aceptarlo.
+- Guardar episodios válidos en `episodes/`.
+- Guardar episodios fallidos en `rejected_episodes/`.
+
+El estado grabado está formado por:
+
+| Componente | Dimensión |
+|---|---:|
+| Articulaciones del brazo | 7 |
+| Pinza normalizada | 1 |
+| TOTAL | 8 |
+
+Las imágenes se capturan desde dos cámaras:
+
+| Cámara | Topic |
+|---|---|
+| Top conveyor | `/camera_top_conveyor/image` |
+| Cabinet | `/camera_cabinet/image` |
+
+Parámetros importantes:
+
+| Parámetro | Valor típico | Descripción |
+|---|---:|---|
+| `--phase-time-scale` | `2.5` | Multiplicador global de duración de fases. Útil para simuladores lentos. |
+| `--move-completion-tolerance` | `0.10` | Tolerancia articular para considerar alcanzado el endpoint. |
+| `--move-completion-timeout` | `15` | Tiempo máximo de espera por movimiento. |
+| `--move-completion-stable-sec` | `0.3` | Tiempo durante el que el robot debe mantenerse estable en destino. |
+
+El flujo general del episodio es:
+
+1. HOME.
+2. Apertura inicial de pinza.
+3. Movimiento a pregrasp.
+4. Descenso al punto de grasp.
+5. Pausa de contacto.
+6. Cierre de pinza.
+7. Pausa postgrasp.
+8. Elevación del cubo.
+9. Movimiento a preplace.
+10. Descenso a place.
+11. Pausa de contacto en place.
+12. Apertura de pinza.
+13. Retirada del TCP.
+
+---
+
+### Grabación batch del dataset
+
+```text
+scripts/record/record_ai_dataset.py
+```
+
+Este script llama repetidamente a `record_ai_expert_episode.py` hasta alcanzar un número objetivo de episodios válidos.
+
+Sus funciones principales son:
+
+- Ejecutar múltiples episodios expertos.
+- Randomizar la posición inicial del cubo rojo.
+- Resetear la escena entre episodios cuando `--reset-scene` está activo.
+- Contabilizar episodios válidos y rechazados.
+- Usar `sys.executable` para heredar el entorno Python activo.
+
+El uso de `sys.executable` evita lanzar accidentalmente `/usr/bin/python3` cuando se está trabajando dentro de un entorno virtual con dependencias como `pyarrow`.
+
+Modos de randomización:
+
+| Modo | Variación aproximada | Descripción |
+|---|---:|---|
+| `fixed` | 0 cm | Posición fija del cubo. |
+| `narrow` | 4 × 5 cm | Variación pequeña y controlada. |
+| `wide` | 8 × 8 cm | Variación recomendada para el dataset final. |
+| `medium` | 12 × 15 cm | Variación más amplia y exigente. |
+
+Ejemplo de grabación del dataset final:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-ros2-il
+
+python scripts/record/record_ai_dataset.py \
+  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
+  --episode-script /root/tfg_panda_ws/src/pkg_dataset/scripts/record/record_ai_expert_episode.py \
+  --target-successes 26 \
+  --max-attempts 40 \
+  --mode wide \
+  --phase-time-scale 2.5 \
+  --reset-scene \
+  --world-name fp3_pick_place_world
+```
+
+---
+
+### Utilidades de entidades en Gazebo
+
+```text
+scripts/gazebo_entity_utils.py
+```
+
+Este fichero contiene utilidades comunes para manipular entidades dentro de Gazebo Fortress.
+
+Funciones principales:
+
+- `set_entity_pose`: mueve una entidad a una pose concreta.
+- `hide_entity`: oculta una entidad desplazándola fuera de la escena útil.
+
+Se utiliza desde los scripts de grabación y desde `reset_scene.py` para reposicionar el cubo rojo y ocultar el cubo azul.
+
+---
+
+### Reset de escena
+
+```text
+scripts/reset_scene.py
+```
+
+Este script resetea la escena sin reiniciar Gazebo.
+
+Sus funciones principales son:
+
+- Mover el brazo a HOME.
+- Abrir la pinza.
+- Colocar el cubo rojo en la posición de pick.
+- Ocultar el cubo azul.
+
+Ejemplo:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-ros2-il
+
+python scripts/reset_scene.py \
+  --world-name fp3_pick_place_world
+```
+
+Este script es útil antes de desplegar la policy entrenada para asegurar que la escena empieza desde una configuración conocida.
+
+---
+
+### Exportación a LeRobot v3
+
+```text
+scripts/export/export_to_lerobot.py
+```
+
+Este script convierte el dataset bruto, formado por Parquet e imágenes JPG por episodio, a formato LeRobot v3 usando la API oficial:
+
+```text
+LeRobotDataset.create
+LeRobotDataset.add_frame
+LeRobotDataset.save_episode
+LeRobotDataset.finalize
+```
+
+La observación y acción exportadas son:
+
+| Clave | Dimensión | Descripción |
+|---|---:|---|
+| `observation.state` | 8 | 7 articulaciones del brazo + 1 valor de pinza normalizada. |
+| `action` | 8 | Estado siguiente `state[t+1]`, alineado temporalmente con la observación. |
+| `observation.images.top` | 224 × 224 × 3 | Imagen RGB de la cámara superior. |
+| `observation.images.cabinet` | 224 × 224 × 3 | Imagen RGB de la cámara cabinet. |
+
+La acción se define como `state[t+1]`, lo que produce un alineamiento directo entre el estado actual y el siguiente comando esperado.
+
+No se exportan como parte de `observation.state`:
+
+- `target_xyz`.
+- `goal_xyz`.
+- `phase_one_hot`.
+- Variables internas del experto clásico.
+
+Esto fuerza a ACT a utilizar las cámaras para percibir la posición del cubo.
+
+Parámetros importantes:
+
+| Parámetro | Valor recomendado | Descripción |
+|---|---:|---|
+| `--no-videos` | Activado | Guarda imágenes PNG en lugar de vídeos `.mp4`. Evita depender de `torchcodec`. |
+| `--trim-home` | `3` | Recorta frames HOME-estable del inicio y deja solo 3. Evita que ACT se quede atascado en HOME. |
+| `--subsample` | `5` | Toma cada quinto frame. Reduce episodios largos grabados con `phase_time_scale` alto. |
+| `--clean-output` | Activado | Borra la salida anterior antes de exportar. |
+
+Ejemplo:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
+
+python scripts/export/export_to_lerobot.py \
+  --root-dir /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
+  --output-dir /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1_lerobot_v3 \
+  --no-videos \
+  --trim-home 3 \
+  --subsample 5 \
+  --clean-output
+```
+
+---
+
+### Entrenamiento de ACT
+
+```text
+scripts/train_act.sh
+```
+
+Este script lanza `lerobot-train` con la configuración utilizada para entrenar ACT.
+
+Características principales:
+
+| Parámetro | Valor |
+|---|---:|
+| Arquitectura | ACT |
+| `chunk_size` | 30 |
+| `n_action_steps` | 30 |
+| `batch_size` | 8 |
+| Steps | 50000 |
+| `image_transforms` | Activado |
+
+El script borra el `output_dir` antes de entrenar para evitar contaminación con estadísticas antiguas.
+
+También verifica que el dataset tenga `stats` antes de lanzar el entrenamiento.
+
+Ejemplo:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
+
+bash scripts/train_act.sh
+```
+
+---
+
+### Test de normalización manual
+
+```text
+scripts/test_manual_normalize.py
+```
+
+Este script comprueba el workaround de normalización utilizado durante inferencia.
+
+Compara la predicción de la policy:
+
+| Caso | Error esperado | Interpretación |
+|---|---:|---|
+| Sin normalización manual | ~1.4 | La policy recibe datos fuera de distribución. |
+| Con normalización manual | ~0.04 | La policy recibe entradas normalizadas correctamente. |
+
+El test confirma que la inferencia debe normalizar manualmente `observation.state`, normalizar imágenes con estadísticas ImageNet y desnormalizar la acción predicha.
+
+Ejemplo:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
+
+python scripts/test_manual_normalize.py \
+  --policy-path /root/tfg_panda_ws/outputs/act/checkpoints/last/pretrained_model \
+  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1_lerobot_v3
+```
+
+Se considera una comprobación válida si el error con normalización manual es inferior a `0.3`.
+
+---
+
+### Servidor de policy ACT
+
+```text
+scripts/inference/act_policy_server.py
+```
+
+Este script ejecuta un servidor ZMQ en Python 3.12 que carga la policy ACT entrenada y sirve predicciones al nodo ROS 2.
+
+Incluye dos workarounds críticos.
+
+#### 1. Normalización manual
+
+La versión de LeRobot utilizada no guarda correctamente los `stats` de `Normalize` y `Unnormalize` dentro del checkpoint.
+
+Por ello, el servidor:
+
+- Calcula `mean/std` del dataset al arrancar.
+- Normaliza `observation.state` con `MEAN_STD`.
+- Normaliza imágenes con estadísticas ImageNet.
+- Ejecuta `select_action`.
+- Desnormaliza la acción antes de enviarla al cliente ROS 2.
+
+Sin este workaround, el error observado es aproximadamente `1.4`.
+
+Con este workaround, el error observado baja aproximadamente a `0.04`.
+
+#### 2. Histéresis de pinza
+
+La salida continua de la pinza se binariza para evitar oscilaciones.
+
+| Condición | Acción |
+|---|---|
+| `raw < 0.45` | Cerrar pinza. |
+| `raw > 0.70` durante 3 steps consecutivos | Reabrir pinza. |
+| Resto de casos | Mantener estado anterior. |
+
+Opcionalmente, el servidor puede guardar logs en CSV y frames de cámara mediante `--log-dir` para generar figuras del TFG.
+
+Ejemplo:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
+
+python scripts/inference/act_policy_server.py \
+  --policy-path /root/tfg_panda_ws/outputs/act/checkpoints/last/pretrained_model \
+  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1_lerobot_v3 \
+  --host 127.0.0.1 \
+  --port 5555 \
+  --log-dir /root/tfg_panda_ws/logs/act_inference_run
+```
+
+---
+
+### Nodo ROS 2 de inferencia
+
+```text
+scripts/inference/infer_act_node.py
+```
+
+Este script ejecuta el cliente ROS 2 de inferencia.
+
+Sus funciones principales son:
+
+- Suscribirse a `/joint_states`.
+- Suscribirse a las cámaras `top conveyor` y `cabinet`.
+- Construir la observación enviada al servidor ZMQ.
+- Recibir la acción predicha por ACT.
+- Publicar comandos `JointTrajectory` al brazo y la pinza.
+- Ejecutar el control a 5 Hz, con periodo de 200 ms.
+
+Ejemplo:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-ros2-il
+
+python scripts/inference/infer_act_node.py \
+  --server-host 127.0.0.1 \
+  --server-port 5555 \
+  --top-image-topic /camera_top_conveyor/image \
+  --cabinet-image-topic /camera_cabinet/image
+```
+
+---
+
+### Generación de figuras para el TFG
+
+```text
+scripts/generate_tfg_figures.py
+```
+
+Este script lee los logs generados por `act_policy_server.py --log-dir` y produce material visual para la memoria y defensa.
+
+Salidas principales:
+
+| Salida | Descripción |
+|---|---|
+| Trayectorias articulares | Compara los 7 joints actuales con la acción comandada. |
+| Detalle de pinza | Muestra predicción raw, umbrales de histéresis y salida binaria. |
+| Latencia de inferencia | Grafica el tiempo de inferencia por step. |
+| Vídeo side-by-side | Genera un vídeo comparando ambas cámaras. |
+
+Ejemplo:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
+
+python scripts/generate_tfg_figures.py \
+  --log-dir /root/tfg_panda_ws/logs/act_inference_run \
+  --output-dir /root/tfg_panda_ws/figures/act_inference_run
 ```
 
 ---
 
 ## Lanzar sistema completo para grabación
 
-Antes de grabar el dataset, debe estar lanzado el entorno completo con Gazebo, controladores y MoveIt.
+Antes de grabar el dataset debe estar lanzado el entorno completo con Gazebo, controladores y MoveIt.
 
 El launcher recomendado es:
 
@@ -109,13 +516,14 @@ ros2 launch pkg_moveit_config moveit_gazebo.launch.py gui:=false camera:=all vie
 
 Este comando lanza:
 
-* Simulación Gazebo/Ignition.
-* Robot Franka Panda / FP3.
-* Cubos rojo y azul.
-* Bridges ROS-Gazebo.
-* Controladores del brazo y la pinza.
-* MoveIt 2.
-* RViz, si está configurado en el launcher.
+- Simulación Gazebo/Ignition Fortress.
+- Robot Franka Panda / FP3.
+- Cubos del entorno.
+- Cámaras de simulación.
+- Bridges ROS-Gazebo.
+- Controladores del brazo y la pinza.
+- MoveIt 2.
+- RViz, si está configurado en el launcher.
 
 Para comprobar que los controladores están activos:
 
@@ -125,9 +533,9 @@ ros2 control list_controllers
 
 Se espera ver:
 
-* `joint_state_broadcaster`
-* `fp3_arm_controller`
-* `fp3_hand_controller`
+- `joint_state_broadcaster`.
+- `fp3_arm_controller`.
+- `fp3_hand_controller`.
 
 Para comprobar que existen las acciones de control:
 
@@ -137,97 +545,16 @@ ros2 action list
 
 Se espera ver:
 
-* `/fp3_arm_controller/follow_joint_trajectory`
-* `/fp3_hand_controller/follow_joint_trajectory`
-
-## Grabación de un episodio
-
-```text
-scripts/record/record_ai_expert_episode.py
-```
-
-Este script ejecuta un único episodio experto de Pick and Place.
-
-Sus funciones principales son:
-
-* Llevar el robot a HOME.
-* Abrir la pinza.
-* Bloquear la orientación del TCP.
-* Calcular trayectorias cartesianas con MoveIt 2.
-* Ejecutar las fases de Pick and Place.
-* Grabar estados, acciones, fases e imágenes.
-* Validar el episodio antes de aceptarlo.
-* Guardar episodios válidos en `episodes/`.
-* Descartar episodios fallidos en `rejected_episodes/`.
-
-El flujo general del episodio es:
-
-1. HOME.
-2. Apertura inicial de pinza.
-3. Aproximación al cubo.
-4. Descenso al punto de agarre.
-5. Cierre de pinza.
-6. Elevación del cubo.
-7. Movimiento hacia zona de destino.
-8. Descenso en zona de place.
-9. Apertura de pinza.
-10. Retirada del TCP.
+- `/fp3_arm_controller/follow_joint_trajectory`.
+- `/fp3_hand_controller/follow_joint_trajectory`.
 
 ---
-
-## Grabación batch del dataset
-
-```text
-scripts/record/record_ai_dataset.py
-```
-
-Este script llama repetidamente a `record_ai_expert_episode.py` hasta alcanzar un número objetivo de episodios válidos.
-
-Permite generar datasets en distintos modos:
-
-| Modo      |	Descripción   |
-| ---       | ---           |
-| `fixed`   |	Usa posiciones fijas para los objetos.  |
-| `narrow`  |	Introduce una variación pequeña en la posición inicial del cubo. |
-| `medium`  |	Introduce una variación mayor en la posición inicial del cubo. |
-
-El modo usado para el dataset final fue principalmente `narrow`, ya que permite obtener demostraciones similares pero no idénticas, manteniendo controlada la variabilidad.
-
-Ejemplo para grabar el dataset final:
-
-```bash
-cd /root/tfg_panda_ws/src/pkg_dataset
-
-source /root/tfg_panda_ws/tools/env_ros.sh
-
-/usr/bin/python3 scripts/record/record_ai_dataset.py \
-  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
-  --episode-script /root/tfg_panda_ws/src/pkg_dataset/scripts/record/record_ai_expert_episode.py \
-  --target-successes 100 \
-  --max-attempts 140 \
-  --mode narrow \
-  --reset-scene \
-  --world-name fp3_pick_place_world
-```
-
-Ejemplo para un dataset pequeño de prueba:
-
-```bash
-/usr/bin/python3 scripts/record/record_ai_dataset.py \
-  --dataset-root /root/tfg_panda_ws/datasets/prueba \
-  --episode-script /root/tfg_panda_ws/src/pkg_dataset/scripts/record/record_ai_expert_episode.py \
-  --target-successes 4 \
-  --max-attempts 4 \
-  --mode narrow \
-  --reset-scene \
-  --world-name fp3_pick_place_world
-```
 
 ## Estructura del dataset bruto
 
 Cada episodio grabado tiene una estructura similar a:
 
-```texet
+```text
 dataset_root/
 └── episodes/
     └── episode_000000_red/
@@ -246,345 +573,116 @@ dataset_root/
 
 Cada episodio contiene:
 
-* Metadatos del episodio.
-* Datos tabulares en formato Parquet.
-* Imágenes de la cámara superior.
-* Imágenes de la cámara caballera.
-* Fases del experto.
-* Estado del robot.
-* Acción aplicada.
-* Información geométrica relevante.
+- Metadatos del episodio.
+- Datos tabulares en formato Parquet.
+- Imágenes JPG de la cámara superior.
+- Imágenes JPG de la cámara cabinet.
+- Fases del experto.
+- Estado del robot.
+- Acción aplicada.
+- Información necesaria para validación interna.
 
-## Validación del dataset bruto
-### Validación estricta
-
-```text
-scripts/validate/validate_ai_dataset.py
-```
-
-Este script comprueba que cada episodio tenga:
-
-* `metadata.json`.
-* `data.parquet`.
-* Imágenes de ambas cámaras.
-* Todas las fases esperadas.
-* Inicio cerca de HOME.
-* Aproximación correcta al cubo.
-* Levantamiento suficiente.
-* Aproximación a la zona de place.
-* Apertura y cierre de pinza.
-
-Ejemplo:
-
-```bash
-python scripts/validate/validate_ai_dataset.py \
-  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1
-```
-
-Ejemplo con criterios más permisivos:
-
-```bash
-python scripts/validate/validate_ai_dataset.py \
-  --dataset-root /root/tfg_panda_ws/datasets/prueba \
-  --min-lift-z 0.40
-```
-
-### Auditoría completa
+Los episodios válidos se guardan en:
 
 ```text
-scripts/validate/audit_ai_dataset_phase1.py
+dataset_root/episodes/
 ```
 
-Este script realiza una auditoría más amplia del dataset bruto.
-
-Comprueba:
-
-* Estructura general.
-* Número de episodios.
-* Existencia de imágenes.
-* Dimensiones de imágenes.
-* Fases registradas.
-* Geometría del movimiento.
-* Rangos articulares.
-* Número de frames.
-
-Ejemplo para el dataset final:
-
-```bash
-python scripts/validate/audit_ai_dataset_phase1.py \
-  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
-  --min-episodes 100
-```
-
-Ejemplo para dataset de prueba:
-
-```bash
-python scripts/validate/audit_ai_dataset_phase1.py \
-  --dataset-root /root/tfg_panda_ws/datasets/prueba \
-  --min-episodes 4 \
-  --max-frames 220
-```
-
-### Preparación para entrenamiento
+Los episodios fallidos se guardan en:
 
 ```text
-scripts/prepare/prepare_ai_dataset_phase1_for_training.py
+dataset_root/rejected_episodes/
 ```
 
-Este script añade columnas derivadas necesarias para entrenamiento y exportación.
+---
 
-Añade:
+## Estructura del dataset LeRobot v3
 
-* `q_gripper_norm_scalar`
-* `phase_one_hot`
-* `observation_state_40`
-* `action_9_checked`
+Tras exportar, el dataset queda preparado para ser usado directamente por LeRobot.
 
-No modifica la trayectoria ni regraba el episodio. Solo añade información estructurada al dataset bruto.
+Con `--no-videos`, el formato visual se guarda como imágenes PNG en lugar de vídeos.
 
-Ejemplo:
+La estructura exacta puede variar según la versión de LeRobot, pero conceptualmente contiene:
 
-```bash
-/usr/bin/python3 scripts/prepare/prepare_ai_dataset_phase1_for_training.py \
-  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1
+```text
+fp3_pick_place_ai_v1_lerobot_v3/
+├── data/
+├── images/
+├── meta/
+│   ├── info.json
+│   ├── stats.json
+│   ├── tasks.jsonl
+│   └── episodes.jsonl
+└── ...
 ```
+
+Claves principales:
+
+- `observation.images.top`.
+- `observation.images.cabinet`.
+- `observation.state`.
+- `action`.
+
+---
 
 ## Observación y acción
+
 ### Observación
 
-La observación final tiene dimensión 40:
+La observación final tiene dimensión 8:
 
-| Componente        |	Dimensión |
-| ---               | ---       |
-| `q_arm`           |	7         |
-| `gripper_norm`    |	1         |
-| `tcp_xyz`         |	3         |
-| `tcp_quat_xyzw`   |	4         |
-| `target_xyz`      |	3         |
-| `goal_xyz`        |	3         |
-| `phase_one_hot`   |	12        |
-| `phase_progress`  |	1         |
-| `tcp_to_target`   |	3         |
-| `tcp_to_goal`     |	3         |
-| TOTAL             |	40        |
+| Componente | Dimensión |
+|---|---:|
+| `q_arm` | 7 |
+| `gripper_norm` | 1 |
+| TOTAL | 8 |
+
+Además del vector de estado, ACT recibe imágenes RGB de dos cámaras:
+
+| Clave | Resolución | Descripción |
+|---|---|---|
+| `observation.images.top` | 224 × 224 | Cámara superior sobre la cinta. |
+| `observation.images.cabinet` | 224 × 224 | Cámara lateral/cabinet. |
 
 ### Acción
 
-La acción final tiene dimensión 9:
+La acción final tiene dimensión 8:
 
-| Componente	              | Dimensión |
-| --- | --- |
-| Articulaciones del brazo `fp3_joint1` a `fp3_joint7`	| 7 |
-| `fp3_finger_joint1_norm`	| 1 |
-| `fp3_finger_joint2_norm`	| 1 |
-| TOTAL	| 9 |
+| Componente | Dimensión |
+|---|---:|
+| Articulaciones del brazo `fp3_joint1` a `fp3_joint7` | 7 |
+| Pinza normalizada | 1 |
+| TOTAL | 8 |
 
-## Exportación a LeRobot/ACT
-
+La acción se calcula como:
 
 ```text
-scripts/export/export_lerobot_ai_v1_multimodal.py
+action[t] = observation.state[t + 1]
 ```
 
-Este script exporta el dataset bruto preparado a formato LeRobot multimodal.
+Esto permite que ACT aprenda a predecir el siguiente estado deseado a partir del estado actual y las imágenes.
 
-Ejemplo:
-
-```bash
-
-python scripts/export/export_lerobot_ai_v1_multimodal.py \
-  --root-dir /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
-  --output-dir /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1/exported_lerobot_act_multimodal \
-  --fps 5 \
-  --image-size 224 \
-  --min-frames 80 \
-  --clean-output
-```
-
-La salida incluye:
-
-```text
-exported_lerobot_act_multimodal/
-├── data/
-│   └── chunk-000/
-│       └── file-000.parquet
-├── videos/
-│   ├── observation.images.top/
-│   │   └── chunk-000/
-│   │       ├── episode_000000.mp4
-│   │       └── ...
-│   └── observation.images.cabinet/
-│       └── chunk-000/
-│           ├── episode_000000.mp4
-│           └── ...
-└── meta/
-    ├── info.json
-    ├── stats.json
-    ├── tasks.parquet
-    ├── episodes.parquet
-    ├── episodes.jsonl
-    ├── episodes_stats.parquet
-    └── episodes_stats.jsonl
-```
-
-## Parches de compatibilidad LeRobot
-
-Los scripts de `scripts/export/patches/` corrigen diferencias entre el formato exportado manualmente y el formato exacto esperado por la versión utilizada de LeRobot.
-
-### Metadata de vídeos
-
-```text
-patch_lerobot_ai_v1_video_metadata.py
-```
-
-Añade a `episodes.parquet` los índices de chunk y fichero de vídeo por episodio.
-
-### Timestamps de vídeo
-
-```text
-patch_lerobot_ai_v1_video_timestamps.py
-```
-
-Añade timestamps de inicio y fin de vídeo:
-
-```text
-videos/<video_key>/from_timestamp
-videos/<video_key>/to_timestamp
-```
-
-### Ruta de vídeo
-
-```text
-patch_lerobot_ai_v1_info_video_path.py
-```
-
-Corrige la plantilla video_path de meta/info.json para que LeRobot pueda localizar los vídeos:
-
-```text
-videos/{video_key}/chunk-{chunk_index:03d}/episode_{file_index:06d}.mp4
-```
-
-### Estadísticas visuales
-
-```text
-patch_lerobot_ai_v1_visual_stats.py
-
-```
-
-Añade estadísticas para las claves visuales:
-
-```text
-observation.images.top
-observation.images.cabinet
-```
-
-### Esquema final de entrenamiento
-
-```text
-patch_lerobot_ai_v1_train_schema.py
-```
-
-Limpia el Parquet principal para dejar únicamente las columnas requeridas por LeRobot:
-
-* `observation.state`
-* `action`
-* `episode_index`
-* `frame_index`
-* `timestamp`
-* `index`
-* `task_index`
-* `next.done`
-
-Además, fuerza:
-
-* `observation.state`: `float32[40]`
-* `action`: `float32[9]`
-* `timestamp`: `float32`
-* `next.done`: `bool`
-
-Este patch crea un backup llamado `file-000.raw_with_extra_columns.parquet`
-
-Ese fichero no debe quedarse dentro de `data/chunk-000/`
-
-porque LeRobot intenta cargar todos los `.parquet` de esa carpeta. Por eso debe moverse a `debug_backups/`.
-
-## Aplicación completa de patches
-
-```bash
-cd /root/tfg_panda_ws/src/pkg_dataset
-
-source /root/lerobot_venv/bin/activate
-
-EXPORT=/root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1/exported_lerobot_act_multimodal
-
-python scripts/export/patches/patch_lerobot_ai_v1_video_metadata.py \
-  --export-root "$EXPORT"
-
-python scripts/export/patches/patch_lerobot_ai_v1_video_timestamps.py \
-  --export-root "$EXPORT"
-
-python scripts/export/patches/patch_lerobot_ai_v1_info_video_path.py \
-  --export-root "$EXPORT"
-
-python scripts/export/patches/patch_lerobot_ai_v1_visual_stats.py \
-  --export-root "$EXPORT"
-
-python scripts/export/patches/patch_lerobot_ai_v1_train_schema.py \
-  --export-root "$EXPORT"
-
-mkdir -p "$EXPORT/debug_backups/data_before_train_schema_patch"
-
-mv "$EXPORT/data/chunk-000/file-000.raw_with_extra_columns.parquet" \
-   "$EXPORT/debug_backups/data_before_train_schema_patch/" 2>/dev/null || true
-```
-
-## Validación del export LeRobot
-
-```text
-scripts/export/validate_lerobot_ai_v1_export.py
-```
-
-Este script comprueba que el dataset exportado sea cargable por LeRobot.
-
-Ejemplo para el dataset final:
-
-```bash
-cd /root/tfg_panda_ws/src/pkg_dataset
-
-source /root/lerobot_venv/bin/activate
-
-python scripts/export/validate_lerobot_ai_v1_export.py \
-  --export-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1/exported_lerobot_act_multimodal \
-  --expected-episodes 100 \
-  --try-lerobot-load
-```
-
-Ejemplo con dataset de prueba:
-
-```bash
-python scripts/export/validate_lerobot_ai_v1_export.py \
-  --export-root /root/tfg_panda_ws/datasets/prueba/exported_lerobot_act_multimodal \
-  --expected-episodes 4 \
-  --try-lerobot-load
-```
-
-En una prueba realizada, el dataset exportado cargó correctamente con `LeRobotDataset`, con 4 episodios, 713 frames, dos cámaras, `observation.state` de dimensión 40 y `action` de dimensión 9.
+---
 
 ## Topics, servicios y frames utilizados
 
-El experto clásico utiliza ROS 2, MoveIt 2 y Gazebo.
+El experto clásico y el nodo de inferencia utilizan ROS 2, MoveIt 2 y Gazebo Fortress.
 
 ### Brazo
 
-```bash
+```text
 /fp3_arm_controller/joint_trajectory
 ```
 
-Se publican mensajes `trajectory_msgs/msg/JointTrajectory`
+Se publican mensajes:
+
+```text
+trajectory_msgs/msg/JointTrajectory
+```
 
 ### Pinza
 
-```bash
+```text
 /fp3_hand_controller/joint_trajectory
 ```
 
@@ -600,7 +698,7 @@ trajectory_msgs/msg/JointTrajectory
 /joint_states
 ```
 
-De este topic se leen las posiciones articulares del brazo y de la pinza.
+De este topic se leen las posiciones articulares del brazo y la pinza.
 
 ### Servicio cartesiano MoveIt
 
@@ -608,19 +706,15 @@ De este topic se leen las posiciones articulares del brazo y de la pinza.
 /compute_cartesian_path
 ```
 
-Se utiliza para calcular movimientos cartesianos entre fases.
+Se utiliza para calcular movimientos cartesianos entre fases del experto.
 
 ### TCP
 
 ```text
-fp3_hand_tcp
-```
-
-El TCP se consulta mediante `tf2`, normalmente con la transformación:
-
-```text
 world -> fp3_hand_tcp
 ```
+
+El TCP se consulta mediante `tf2`.
 
 ### Cámaras
 
@@ -629,152 +723,258 @@ world -> fp3_hand_tcp
 /camera_cabinet/image
 ```
 
-Estas imágenes se guardan por frame y posteriormente se convierten a vídeo .mp4.
+Estas imágenes se guardan por frame durante la grabación y se exportan posteriormente al dataset LeRobot v3.
 
-Fases del experto
+---
 
-Las fases principales registradas son:
+## Fases del experto
 
-* `open_gripper_initial`
-* `move_to_pregrasp_tcp`
-* `descend_to_grasp_tcp`
-* `grasp_contact_pause`
-* `close_gripper_on_cube`
-* `post_grasp_hold`
-* `lift_object_tcp`
-* `move_to_preplace_tcp`
-* `descend_to_place_tcp`
-* `place_contact_pause`
-* `open_gripper_release`
-* `retreat_after_place_tcp`
+Las fases principales registradas por el experto clásico son:
 
-Estas fases se codifican posteriormente como `phase_one_hot` para formar parte de la observación del modelo.
+- `open_gripper_initial`.
+- `move_to_pregrasp_tcp`.
+- `descend_to_grasp_tcp`.
+- `grasp_contact_pause`.
+- `close_gripper_on_cube`.
+- `post_grasp_hold`.
+- `lift_object_tcp`.
+- `move_to_preplace_tcp`.
+- `descend_to_place_tcp`.
+- `place_contact_pause`.
+- `open_gripper_release`.
+- `retreat_after_place_tcp`.
+
+Estas fases se usan para organizar y validar la demostración, pero no se introducen como `phase_one_hot` en la observación final del modelo ACT.
+
+---
 
 ## Valores importantes del experto
+
 ### HOME
 
-```bash
-HOME = [0.0, -0.7854, 0.0, -2.3562, 0.0, 1.5708, 0.7854]
+```python
+HOME = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
 ```
 
 ### Pinza abierta
 
-```bash
-HAND_OPEN = [0.039, 0.039]
+```python
+HAND_OPEN = [0.04, 0.04]
 ```
 
 ### Pinza cerrada
 
-```bash
-HAND_CLOSED = [0.006, 0.006]
+```python
+HAND_CLOSED = [0.0, 0.0]
 ```
+
+---
 
 ## Dataset final utilizado
 
-El dataset final usado para LeRobot/ACT fue `/root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1`
+El dataset final usado para entrenar ACT fue grabado con randomización `wide` y tiempos ampliados para mejorar la estabilidad del experto en simulación.
 
-Exportado en `/root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1/exported_lerobot_act_multimodal`
+| Característica | Valor |
+|---|---:|
+| Episodios | 26 |
+| Frecuencia de grabación | 5 Hz |
+| Cámaras | 2 |
+| Cámaras usadas | Top conveyor + cabinet |
+| Imagen | 224 × 224 RGB |
+| Dimensión de `observation.state` | 8 |
+| Dimensión de `action` | 8 |
+| Formato visual | Imágenes PNG, sin vídeo |
+| Modo de grabación | `wide` |
+| Variación aproximada | 8 × 8 cm |
+| `phase_time_scale` | 2.5 |
+| `subsample` al exportar | 5 |
+| `trim_home` | 3 frames |
 
-Características principales:
-
-| Característica      |	Valor   |
-| ---                 | ---     |
-| Episodios           |	100     |
-| Frecuencia          |	5 Hz    |
-| Cámaras             |	2       |
-| Dimensión de `observation.state`    |	40  |
-| Dimensión de action   |	9               |
-| Formato visual        |	Vídeos `.mp4` por episodio y cámara |
-
-Claves principales de LeRobot:
-
-* `observation.images.top`
-* `observation.images.cabinet`
-* `observation.state`
-* `action`
+---
 
 ## Flujo recomendado de uso
-### 1. Cargar entorno
+
+### 1. Lanzar simulación con Gazebo y MoveIt
 
 ```bash
 source /root/tfg_panda_ws/tools/env_ros.sh
-```
-
-### 2. Lanzar simulación + MoveIt
-
-```bash
 ros2 launch pkg_moveit_config moveit_gazebo.launch.py gui:=false camera:=all view_camera:=false
 ```
 
-### 3. Grabar dataset
+---
+
+### 2. Grabar dataset
 
 ```bash
 cd /root/tfg_panda_ws/src/pkg_dataset
+use-ros2-il
 
-/usr/bin/python3 scripts/record/record_ai_dataset.py \
+python scripts/record/record_ai_dataset.py \
   --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
   --episode-script /root/tfg_panda_ws/src/pkg_dataset/scripts/record/record_ai_expert_episode.py \
-  --target-successes 100 \
-  --max-attempts 140 \
-  --mode narrow \
+  --target-successes 26 \
+  --max-attempts 40 \
+  --mode wide \
+  --phase-time-scale 2.5 \
   --reset-scene \
   --world-name fp3_pick_place_world
 ```
 
-### 4. Validar dataset bruto
+---
+
+### 3. Exportar a LeRobot v3
 
 ```bash
-python scripts/validate/validate_ai_dataset.py \
-  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
+
+python scripts/export/export_to_lerobot.py \
+  --root-dir /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
+  --output-dir /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1_lerobot_v3 \
+  --no-videos \
+  --trim-home 3 \
+  --subsample 5 \
+  --clean-output
 ```
 
-### 5. Auditar dataset bruto
+---
+
+### 4. Entrenar ACT
 
 ```bash
-python scripts/validate/audit_ai_dataset_phase1.py \
-  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
-  --min-episodes 100
-6. Preparar dataset para entrenamiento
-/usr/bin/python3 scripts/prepare/prepare_ai_dataset_phase1_for_training.py \
-  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1
-7. Exportar a LeRobot/ACT
-source /root/lerobot_venv/bin/activate
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
 
-python scripts/export/export_lerobot_ai_v1_multimodal.py \
-  --root-dir /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
-  --output-dir /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1/exported_lerobot_act_multimodal \
-  --fps 5 \
-  --image-size 224 \
-  --min-frames 80 \
-  --clean-output
-8. Aplicar patches
-EXPORT=/root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1/exported_lerobot_act_multimodal
+bash scripts/train_act.sh
+```
 
-python scripts/export/patches/patch_lerobot_ai_v1_video_metadata.py --export-root "$EXPORT"
-python scripts/export/patches/patch_lerobot_ai_v1_video_timestamps.py --export-root "$EXPORT"
-python scripts/export/patches/patch_lerobot_ai_v1_info_video_path.py --export-root "$EXPORT"
-python scripts/export/patches/patch_lerobot_ai_v1_visual_stats.py --export-root "$EXPORT"
-python scripts/export/patches/patch_lerobot_ai_v1_train_schema.py --export-root "$EXPORT"
+---
 
-mkdir -p "$EXPORT/debug_backups/data_before_train_schema_patch"
+### 5. Verificar normalización manual
 
-mv "$EXPORT/data/chunk-000/file-000.raw_with_extra_columns.parquet" \
-   "$EXPORT/debug_backups/data_before_train_schema_patch/" 2>/dev/null || true
-9. Validar export LeRobot
-python scripts/export/validate_lerobot_ai_v1_export.py \
-  --export-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1/exported_lerobot_act_multimodal \
-  --expected-episodes 100 \
-  --try-lerobot-load
-Comprobaciones útiles
-Ver cámaras disponibles
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
+
+python scripts/test_manual_normalize.py \
+  --policy-path /root/tfg_panda_ws/outputs/act/checkpoints/last/pretrained_model \
+  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1_lerobot_v3
+```
+
+El error con normalización manual debería ser inferior a:
+
+```text
+0.3
+```
+
+---
+
+### 6. Resetear escena
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-ros2-il
+
+python scripts/reset_scene.py \
+  --world-name fp3_pick_place_world
+```
+
+---
+
+### 7. Desplegar servidor ACT
+
+En una terminal:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
+
+python scripts/inference/act_policy_server.py \
+  --policy-path /root/tfg_panda_ws/outputs/act/checkpoints/last/pretrained_model \
+  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1_lerobot_v3 \
+  --host 127.0.0.1 \
+  --port 5555 \
+  --log-dir /root/tfg_panda_ws/logs/act_inference_run
+```
+
+---
+
+### 8. Desplegar cliente ROS 2
+
+En otra terminal:
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-ros2-il
+
+python scripts/inference/infer_act_node.py \
+  --server-host 127.0.0.1 \
+  --server-port 5555 \
+  --top-image-topic /camera_top_conveyor/image \
+  --cabinet-image-topic /camera_cabinet/image
+```
+
+---
+
+### 9. Generar figuras y vídeo
+
+```bash
+cd /root/tfg_panda_ws/src/pkg_dataset
+use-il
+
+python scripts/generate_tfg_figures.py \
+  --log-dir /root/tfg_panda_ws/logs/act_inference_run \
+  --output-dir /root/tfg_panda_ws/figures/act_inference_run
+```
+
+---
+
+## Comprobaciones útiles
+
+### Ver cámaras disponibles
+
+```bash
 ros2 topic list | grep camera
-Ver estado articular
+```
+
+### Ver estado articular
+
+```bash
 ros2 topic echo /joint_states
-Ver controladores
+```
+
+### Ver controladores
+
+```bash
 ros2 control list_controllers
-Ver action servers
+```
+
+### Ver action servers
+
+```bash
 ros2 action list
-Ver servicio de planificación cartesiana
+```
+
+### Ver servicio de planificación cartesiana
+
+```bash
 ros2 service list | grep compute_cartesian_path
-Ver modelos en Gazebo
+```
+
+### Ver modelos en Gazebo
+
+```bash
 ign model --list
+```
+
+---
+
+## Notas técnicas importantes
+
+- El modo recomendado para el dataset final es `wide`, ya que introduce variabilidad suficiente sin hacer la tarea excesivamente inestable.
+- Para simuladores lentos se recomienda `--phase-time-scale 2.5`.
+- La exportación debe usar `--trim-home 3` para evitar que ACT aprenda a permanecer en HOME durante demasiados pasos.
+- La exportación debe usar `--subsample 5` cuando los episodios se graban con duraciones ampliadas.
+- El formato recomendado es `--no-videos`, ya que evita problemas con dependencias de vídeo como `torchcodec`.
+- Durante inferencia es necesario usar normalización manual en el servidor ACT.
+- La pinza debe tratarse con histéresis para evitar aperturas y cierres oscilantes.
