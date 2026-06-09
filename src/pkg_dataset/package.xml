@@ -4,7 +4,7 @@
   <version>0.1.0</version>
   <description>Dataset generation package for FP3 Panda pick and place demonstrations.</description>
 
-  <maintainer email="victor@example.com">Victor</maintainer>
+  <maintainer email="gbvictor011@protonmail.com">Victor</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

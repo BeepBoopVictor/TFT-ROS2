@@ -3,29 +3,21 @@ project(pkg_dataset)
 
 find_package(ament_cmake REQUIRED)
 
-install(
-  DIRECTORY
-    config
-    launch
-  DESTINATION share/${PROJECT_NAME}
-)
+# install(
+#   DIRECTORY
+#     launch
+#   DESTINATION share/${PROJECT_NAME}
+# )
 
 install(
   PROGRAMS
-    scripts/record_pick_place_episode.py
-    scripts/record_pick_place_episode_clean.py
-    scripts/record_pick_place_episode_moveit_tcp.py
-    scripts/record_n_episodes.py
-    scripts/episode_validator.py
-    scripts/build_dataset_index.py
-    scripts/convert_to_lerobot_stub.py
-    scripts/scene_randomizer.py
     scripts/gazebo_entity_utils.py
-    scripts/analyze_dataset.py
-    scripts/build_manifest.py
-    scripts/split_dataset.py
-    scripts/export_lerobot_like_dataset.py
-    scripts/export_lerobot_act_dataset.py
+    scripts/test_manual_normalize.py
+    scripts/record/record_ai_dataset.py
+    scripts/record/record_ai_expert_episode.py
+    scripts/inference/act_policy_server.py
+    scripts/inference/infer_act_node.py
+    scripts/export/export_to_lerobot.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

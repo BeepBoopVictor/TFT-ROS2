@@ -201,15 +201,16 @@ Ejemplo de grabación del dataset final:
 cd /root/tfg_panda_ws/src/pkg_dataset
 use-ros2-il
 
-python scripts/record/record_ai_dataset.py \
-  --dataset-root /root/tfg_panda_ws/datasets/fp3_pick_place_ai_v1 \
-  --episode-script /root/tfg_panda_ws/src/pkg_dataset/scripts/record/record_ai_expert_episode.py \
-  --target-successes 26 \
-  --max-attempts 40 \
-  --mode wide \
-  --phase-time-scale 2.5 \
-  --reset-scene \
-  --world-name fp3_pick_place_world
+python record/record_ai_dataset.py \
+    --target-successes 50 --max-attempts 75 \
+    --mode wide --object-color red \
+    --fps 5 --image-size 224 \
+    --reset-scene --phase-time-scale 1.0
+    --world-name fp3_pick_place_world \
+    --move-completion-tolerance 0.10 \
+    --move-completion-timeout 15.0 \
+    --move-completion-stable-sec 0.30 \
+    --home-timeout 40.0
 ```
 
 ---

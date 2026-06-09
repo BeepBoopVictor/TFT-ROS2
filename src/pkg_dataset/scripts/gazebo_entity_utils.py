@@ -110,7 +110,6 @@ def _parse_pose_info_text(text: str, entity_name: str) -> Optional[PoseXYZRPY]:
         z: ...
       }
 
-    No usamos los primeros números del output porque pueden ser IDs internos.
     """
 
     name_pattern = re.escape(entity_name)
@@ -139,10 +138,6 @@ def _parse_pose_info_text(text: str, entity_name: str) -> Optional[PoseXYZRPY]:
 def get_entity_pose(entity_name: str, world_name: str = "fp3_pick_place_world") -> Optional[PoseXYZRPY]:
     """
     Consulta la pose real de una entidad desde Ignition/Gazebo.
-
-    Importante:
-    - No usamos `ign model -p` porque su salida puede variar y meter IDs internos.
-    - Usamos el topic global de poses del mundo y filtramos por nombre.
     """
 
     topic = f"/world/{world_name}/pose/info"

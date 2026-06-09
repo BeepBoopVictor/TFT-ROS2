@@ -41,7 +41,6 @@ except ImportError:
 JOINT_NAMES = [f"J{i}" for i in range(1, 8)]
 HOME = np.array([0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785], dtype=np.float32)
 
-# Paleta sencilla y consistente para la memoria
 C = {
     "state": "#1565C0",
     "action": "#EF6C00",
@@ -118,7 +117,6 @@ def plot_joint_trajectories(data, out_path):
         if j == 0:
             ax.legend(fontsize=7, loc="upper right")
 
-    # Gripper en el último panel
     ax = axes[7]
     ax.plot(t, data["grip_raw"], "-", linewidth=1.2,
             label="Predicción raw", color=C["gripper"])
@@ -287,7 +285,6 @@ def make_video(log_dir, out_path, fps=10, data=None):
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(out_path, fourcc, fps, (total_w, total_h))
 
-    # Diccionarios opcionales para mostrar tiempo y gripper en el pie del vídeo
     step_to_time = {}
     step_to_grip = {}
     if data is not None:
@@ -309,11 +306,9 @@ def make_video(log_dir, out_path, fps=10, data=None):
         canvas[header:header + h, :w] = top
         canvas[header:header + h, w + gap:w + gap + w] = cab
 
-        # Cabecera: solo nombres de cámara. Ya no se pinta Step sobre Camera Cabinet.
         _draw_label_box(canvas, "Camera Top (Conveyor)", (12, 27), font_scale=0.58)
         _draw_label_box(canvas, "Camera Cabinet", (w + gap + 12, 27), font_scale=0.58)
 
-        # Separador vertical y borde inferior del pie
         cv2.line(canvas, (w + gap // 2, header), (w + gap // 2, header + h), (70, 70, 70), 1)
         cv2.line(canvas, (0, header + h), (total_w, header + h), (70, 70, 70), 1)
 

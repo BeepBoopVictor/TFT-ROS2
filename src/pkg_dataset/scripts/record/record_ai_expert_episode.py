@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""
-Record one high-quality expert demonstration (v6 atomic dataset writer + stable HOME gate) for FP3 / Franka Panda pick-and-place.
-
-This script is intentionally conservative:
-- starts from HOME every episode,
-- locks TCP orientation after HOME,
-- uses slow cartesian phases,
-- closes/opens the gripper progressively,
-- records robot state, TCP, expert action, phase labels and two camera images,
-- validates the episode before marking success=True.
-
-Output layout:
-  <dataset_root>/episodes/episode_000000_red/
-    metadata.json
-    data.parquet
-    images/top/frame_000000.jpg
-    images/cabinet/frame_000000.jpg
-"""
 
 import argparse
 import json
@@ -129,12 +111,7 @@ def ensure_dir(path: Path) -> None:
 
 
 def try_reset_cube_scene_at_end(args) -> bool:
-    """Best-effort reset of the cube scene after recording.
 
-    The active cube is returned to the original pick pose used for this episode,
-    and the inactive cube is hidden. This happens AFTER recording/validation, so
-    it never contaminates the saved data.
-    """
     if not bool(getattr(args, "reset_cube_at_end", True)):
         print("[AI_REC] reset_cube_at_end disabled")
         return True
@@ -222,9 +199,6 @@ class AIExpertRecorder(Node):
         self.rejected_episode_dir = self.dataset_root / "rejected_episodes" / self.episode_name
         self.tmp_episode_dir = self.dataset_root / "_tmp_recording" / self.episode_name
 
-        # Atomic recording: write everything to _tmp_recording first. Only if the
-        # episode validates successfully do we move it into episodes/. This prevents
-        # failed HOME attempts or bad partial recordings from becoming training samples.
         if self.tmp_episode_dir.exists():
             shutil.rmtree(self.tmp_episode_dir)
         ensure_dir(self.tmp_episode_dir)
@@ -416,19 +390,7 @@ class AIExpertRecorder(Node):
         return resp.solution.joint_trajectory
 
     def execute_traj_recorded(self, traj, label: str, total_duration: float):
-        """Ejecuta la trayectoria publicando UNA sola JointTrajectory con todos los puntos.
 
-        El bug que esto arregla: la version anterior publicaba una JointTrajectory NUEVA
-        por cada waypoint cada `dt` segundos. Cada publish interrumpia el seguimiento del
-        controlador y empezaba una trayectoria nueva con un nuevo target. El robot nunca
-        alcanzaba el endpoint porque siempre se le reemplazaba el objetivo antes. Por eso
-        los TCP_after del log estaban muy lejos de los target.
-
-        Ahora se publica UNA JointTrajectory con todos los puntos en sus time_from_start
-        proporcionales al total_duration. El joint_trajectory_controller la interpola y la
-        ejecuta entera. Mientras tanto, mantenemos self.current_action_arm actualizado con
-        el waypoint vigente para que los frames grabados contengan la accion correcta.
-        """
         pts = list(traj.points)
         if not pts:
             raise RuntimeError(f"{label}: sin puntos")
@@ -442,7 +404,6 @@ class AIExpertRecorder(Node):
                 self.spin_some(dt)
             return
 
-        # Construir UNA sola JointTrajectory con todos los puntos.
         msg = JointTrajectory()
         msg.joint_names = ARM_JOINTS
         times = []
@@ -450,22 +411,18 @@ class AIExpertRecorder(Node):
             q = np.clip(np.asarray(p.positions[:7], dtype=np.float32), ARM_LOW, ARM_HIGH)
             pt = JointTrajectoryPoint()
             pt.positions = [float(x) for x in q]
-            # time_from_start proporcional al total_duration; primer waypoint NO en t=0
-            # (el controlador rechaza puntos con time_from_start=0 si ya esta en t=0).
+
             t = (i + 1) / float(n) * float(total_duration)
             pt.time_from_start.sec = int(t)
             pt.time_from_start.nanosec = int((t - int(t)) * 1e9)
             msg.points.append(pt)
             times.append(t)
 
-        # Publicar 2-3 veces para tolerar perdidas de QoS.
         for _ in range(2):
             self.arm_pub.publish(msg)
             self.spin_some(0.02)
         print(f"[AI_REC] execute {label}: {n} points sent as single trajectory, duration={total_duration:.2f}s")
 
-        # Esperar a que termine la trayectoria, actualizando current_action_arm con el
-        # waypoint vigente para que los frames grabados contengan la accion correcta.
         start = now_sec()
         end = start + float(total_duration)
         last_idx = -1
@@ -481,18 +438,11 @@ class AIExpertRecorder(Node):
                 last_idx = idx
             self.spin_some(0.05)
 
-        # Asegurar que el ultimo waypoint queda registrado como accion vigente.
         self.current_action_arm = np.asarray(pts[-1].positions[:7], dtype=np.float32)
 
     def wait_arm_at_target(self, target_q: np.ndarray, tolerance: float,
                            timeout: float, stable_sec: float, label: str = "") -> bool:
-        """Espera a que self.last_arm_q este cerca de target_q de forma estable.
 
-        Esto es esencial despues de cada movimiento. Sin esto, la siguiente fase del
-        experto arranca aunque el brazo siga moviendose -> el TCP nunca llega al
-        endpoint y las demos son fisicamente erroneas (aunque el script las marque
-        como success).
-        """
         target_q = np.asarray(target_q[:7], dtype=np.float32)
         start = now_sec()
         stable_start = None
@@ -534,9 +484,6 @@ class AIExpertRecorder(Node):
         traj = self.compute_cartesian(target, phase)
         self.execute_traj_recorded(traj, phase, duration)
 
-        # Esperar a que el brazo llegue al ultimo waypoint de la trayectoria.
-        # Sin esto, la siguiente fase empieza con el brazo todavia en movimiento
-        # y nunca llega al endpoint deseado.
         if traj.points and not self.args.dry_run:
             target_q = np.asarray(traj.points[-1].positions[:7], dtype=np.float32)
             self.wait_arm_at_target(
@@ -582,12 +529,7 @@ class AIExpertRecorder(Node):
 
     def wait_arm_stable(self, target: np.ndarray, tolerance: float, timeout: float, stable_sec: float,
                         republish_every: float = 0.8) -> bool:
-        """Wait until the arm is near target for a continuous stable window.
 
-        A single lucky /joint_states sample is not enough. This prevents the dataset
-        from depending on 0.1 s timing jitter. Recording starts only after HOME has
-        been continuously valid for stable_sec.
-        """
         target = np.asarray(target, dtype=np.float32)
         start = now_sec()
         last_pub = -1e9
@@ -666,12 +608,7 @@ class AIExpertRecorder(Node):
         self.set_phase("open_gripper_initial", self.args.open_initial_duration)
         print("[AI_REC] HOME + gripper abierto")
 
-        # In batch mode, the previous episode may still be close to retreat/place.
-        # A single JointTrajectory command is not reliable enough here: the new
-        # episode must not start recording until /joint_states confirms HOME.
         if not self.args.dry_run:
-            # Fast preparation outside the dataset. It is allowed to be quick and
-            # ugly because recording has not started yet.
             self.publish_arm(HOME, self.args.home_duration)
             home_ok = self.wait_arm_stable(
                 HOME,
@@ -696,7 +633,6 @@ class AIExpertRecorder(Node):
         self.current_action_arm = HOME.copy()
         self.current_action_hand = HAND_OPEN.copy()
 
-        # Settle after confirmed HOME so the first recorded frames are clean.
         self.spin_some(self.args.home_settle_sec)
         print("[AI_REC] q_home_actual:", self.round_vec(self.last_arm_q))
         print("[AI_REC] home_error:", f"{self.arm_error_to(HOME):.3f}")
@@ -888,9 +824,6 @@ class AIExpertRecorder(Node):
         print(f"[AI_REC] wrote temp {parquet_path}")
         print(f"[AI_REC] metadata success={success} reason={reason}")
 
-        # Atomic finalize. Failed episodes are not stored under episodes/, so they
-        # cannot accidentally be exported or trained on. They are either moved to
-        # rejected_episodes/ for debugging or deleted.
         if success:
             if self.accepted_episode_dir.exists():
                 shutil.rmtree(self.accepted_episode_dir)
@@ -941,9 +874,6 @@ class AIExpertRecorder(Node):
         self.wait_ready()
         self.go_home_and_open()
 
-        # Start recording only after the robot has reached HOME and the gripper is open.
-        # Then explicitly record the initial open_gripper phase as a stable hold.
-        # This prevents the dataset from missing phase 0 while keeping frame 0 near HOME.
         self.start_recording(expected_duration)
         self.hold_phase("open_gripper_initial", self.args.open_initial_duration)
 
@@ -953,9 +883,6 @@ class AIExpertRecorder(Node):
         self.progressive_gripper("close_gripper_on_cube", HAND_OPEN, HAND_CLOSED, self.args.close_gripper_duration, self.args.gripper_steps)
         self.hold_phase("post_grasp_hold", self.args.post_grasp_hold_duration)
         self.move_tcp("lift_object_tcp", lift, self.args.lift_duration)
-        # Keep recording under the same lift phase briefly after the cartesian command.
-        # TF/joint_states can lag behind the command endpoint; this captures the real lifted pose
-        # and prevents rejecting visually correct episodes due to one low sample margin.
         self.hold_phase("lift_object_tcp", self.args.lift_settle_duration)
         self.move_tcp("move_to_preplace_tcp", preplace, self.args.move_to_preplace_duration)
         self.move_tcp("descend_to_place_tcp", place, self.args.descend_to_place_duration)
@@ -967,9 +894,6 @@ class AIExpertRecorder(Node):
         success, reason, metrics = self.validate_records()
         self.write_outputs(success, reason, metrics)
 
-        # Important for batch dataset generation: leave the scene ready for the
-        # next episode by returning the cube to its original pick pose.
-        # This is best-effort and is deliberately done after recording/validation.
         reset_ok = try_reset_cube_scene_at_end(self.args)
         if not reset_ok:
             print("[AI_REC][WARN] El episodio es válido, pero el reset final del cubo falló.")
@@ -998,9 +922,6 @@ def build_parser():
     p.add_argument("--place-z", type=float, default=0.23)
     p.add_argument("--retreat-z", type=float, default=0.52)
 
-    # Preparation/Home happens BEFORE recording and is never stored as data.
-    # Defaults are intentionally fast but require a short stable window, so one
-    # timing sample cannot flip success/failure.
     p.add_argument("--home-duration", type=float, default=1.5)
     p.add_argument("--home-timeout", type=float, default=7.0)
     p.add_argument("--home-republish-sec", type=float, default=0.7)
@@ -1026,14 +947,8 @@ def build_parser():
     p.add_argument("--retreat-duration", type=float, default=1.5)
     p.add_argument("--gripper-steps", type=int, default=10)
 
-    # Multiplicador global para TODAS las duraciones de fase. Si el robot va demasiado
-    # rapido y no termina las fases (TCP_after lejos del target), subir esto a 1.5 o 2.0.
-    # Default 1.0 mantiene los tiempos originales.
     p.add_argument("--phase-time-scale", type=float, default=1.0)
 
-    # Espera al final de cada move_tcp a que el brazo llegue al ultimo waypoint.
-    # Tolerance es la norma del error en espacio de joints (rad). Para un Franka, 0.05 rad
-    # equivale a unos 3 grados acumulados.
     p.add_argument("--move-completion-tolerance", type=float, default=0.05)
     p.add_argument("--move-completion-timeout", type=float, default=3.0)
     p.add_argument("--move-completion-stable-sec", type=float, default=0.2)
@@ -1046,12 +961,9 @@ def build_parser():
     p.add_argument("--home-tolerance", type=float, default=0.18)
     p.add_argument("--max-grasp-xy-error", type=float, default=0.06)
     p.add_argument("--max-grasp-z", type=float, default=0.25)
-    # A value around 0.40 is intentional: the cube is already clearly lifted, while TF samples
-    # during the lift phase may be slightly below the commanded final z.
     p.add_argument("--min-lift-z", type=float, default=0.40)
     p.add_argument("--max-place-xy-error", type=float, default=0.08)
 
-    # Scene reset after the episode. Enabled by default so the next episode starts clean.
     p.add_argument("--reset-cube-at-end", dest="reset_cube_at_end", action="store_true", default=True)
     p.add_argument("--no-reset-cube-at-end", dest="reset_cube_at_end", action="store_false")
     p.add_argument("--world-name", default="default")
@@ -1069,9 +981,6 @@ def build_parser():
 def main():
     args = build_parser().parse_args()
 
-    # Aplicar phase_time_scale a TODAS las duraciones de fase.
-    # Esto permite hacer una corrida lenta y conservadora desde la CLI sin tocar 13
-    # argumentos individuales: --phase-time-scale 1.5 lo hace todo 50% mas lento.
     s = float(args.phase_time_scale)
     if s != 1.0:
         scaled_attrs = [

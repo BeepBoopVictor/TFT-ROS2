@@ -129,7 +129,8 @@ def build_state_action(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         if q_arm.size != 7:
             raise ValueError(f"q_arm tiene dim {q_arm.size}, se esperaban 7")
         g = to_array(row["q_gripper_norm"], "q_gripper_norm")
-        # Los dos dedos son espejo: una sola dimension de pinza (1=abierta, 0=cerrada).
+        
+        # Una sola dimension para la pinza (1=abierta, 0=cerrada).
         g_norm = float(np.clip(np.mean(g), 0.0, 1.0))
         states.append(np.concatenate([q_arm, [g_norm]]).astype(np.float32))
 

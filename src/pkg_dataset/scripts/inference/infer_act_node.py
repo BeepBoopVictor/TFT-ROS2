@@ -9,7 +9,7 @@ Arquitectura:
                                 v
                          act_policy_server.py (3.12, lerobot, GPU)
 
-Este nodo no necesita torch ni lerobot: solo rclpy, cv_bridge, opencv, pyzmq.
+Este nodo necesita solo rclpy, cv_bridge, opencv, pyzmq.
 
 Uso (en un venv 3.10 con --system-site-packages que vea ROS2 Humble):
   source /opt/ros/humble/setup.bash
@@ -67,9 +67,6 @@ DEFAULT_GRIPPER_OPEN = 0.04
 
 
 # --- Serializacion de arrays independiente de version de NumPy ---------------
-# El servidor corre con numpy>=2 (lerobot) y este cliente con numpy<2 (cv_bridge
-# del sistema). El pickle nativo de NumPy NO es compatible entre versiones
-# (referencias a numpy._core); por eso pasamos shape/dtype/bytes a mano.
 
 def _encode_array(a: np.ndarray) -> dict:
     a = np.ascontiguousarray(a)

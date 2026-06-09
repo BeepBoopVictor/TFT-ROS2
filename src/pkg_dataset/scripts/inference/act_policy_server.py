@@ -192,9 +192,9 @@ class ACTPolicyServer:
 
         action = (pred_norm * self.action_std + self.action_mean).cpu().numpy().astype(np.float32)
 
-        # Gripper: evita oscilaciones abrir/cerrar.
-        # - Cierra cuando la policy predice grip < 0.3 (muy segura de cerrar)
-        # - Una vez cerrado, solo reabre si grip > 0.8 durante 5 steps seguidos
+        # Gripper: binarizado.
+        # - Cierra cuando grip < 0.4195 
+        # - Abre cuando grip > 0.9
         grip = float(action[7])
         if not self.grip_closed:
             if grip < 0.4195:

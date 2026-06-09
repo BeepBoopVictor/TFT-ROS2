@@ -1,20 +1,11 @@
 #!/usr/bin/env python3
 """
-Batch recorder for the high-quality AI dataset (v3 atomic accepted/rejected episodes).
-
-It calls record_ai_expert_episode.py repeatedly, optionally randomizing pick positions.
-
 Modos disponibles:
     fixed   - posicion del pick fija (--fixed-pick)
     narrow  - 4x5 cm  (x in [0.38,0.42], y in [0.15,0.20]) -- demasiado estrecho
     wide    - 8x8 cm  (x in [0.36,0.44], y in [0.13,0.21]) -- recomendado
     medium  - 12x15 cm (x in [0.35,0.47], y in [0.10,0.25]) -- mucha variabilidad
 
-Para entrenamiento con ACT, usa --mode wide. Es el sweet spot entre cubrir suficiente
-espacio visual para que la red use las camaras y manejar episodios alcanzables por el
-experto cinematico.
-
-If gazebo_entity_utils is available, it resets the red/blue cube pose before each episode.
 """
 
 import argparse
@@ -115,7 +106,6 @@ def run_episode(args, episode_id, pick, goal, object_color):
         "--home-start-tolerance", str(args.home_start_tolerance),
         "--home-stable-sec", str(args.home_stable_sec),
         "--hand-stable-sec", str(args.hand_stable_sec),
-        # Nuevos: control de velocidad y wait al endpoint
         "--phase-time-scale", str(args.phase_time_scale),
         "--move-completion-tolerance", str(args.move_completion_tolerance),
         "--move-completion-timeout", str(args.move_completion_timeout),

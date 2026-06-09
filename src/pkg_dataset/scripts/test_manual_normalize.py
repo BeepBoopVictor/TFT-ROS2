@@ -15,13 +15,11 @@ REPO_ID = "tfg/fp3_pick_place_act"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# 1. Cargar
 print("[TEST] Cargando dataset y policy...")
 ds = LeRobotDataset(repo_id=REPO_ID, root=DATASET_ROOT)
 policy = ACTPolicy.from_pretrained(POLICY_PATH)
 policy.eval().to(device)
 
-# 2. Computar stats del dataset
 random.seed(42)
 n = min(2000, ds.num_frames)
 indices = sorted(random.sample(range(ds.num_frames), n))
@@ -37,14 +35,12 @@ s_std  = torch.tensor(np.maximum(states.std(0), 1e-6), dtype=torch.float32, devi
 a_mean = torch.tensor(actions.mean(0), dtype=torch.float32, device=device)
 a_std  = torch.tensor(np.maximum(actions.std(0), 1e-6), dtype=torch.float32, device=device)
 
-# ImageNet stats (lo que la policy usaria si el normalize funcionara)
 img_mean = torch.tensor([0.485, 0.456, 0.406], device=device).reshape(1, 3, 1, 1)
 img_std  = torch.tensor([0.229, 0.224, 0.225], device=device).reshape(1, 3, 1, 1)
 
 print(f"[TEST] state_mean: {np.round(s_mean.cpu().numpy(), 4).tolist()}")
 print(f"[TEST] state_std:  {np.round(s_std.cpu().numpy(), 4).tolist()}")
 
-# 3. Test: SIN normalizar (como esta ahora, deberia dar error ~1.4)
 print("\n=== SIN normalizacion manual (status quo) ===")
 for i in [0, 50, 100]:
     if i >= ds.num_frames: break
@@ -62,7 +58,6 @@ for i in [0, 50, 100]:
     pred_np = pred.cpu().numpy()
     print(f"  frame {i}: err={np.linalg.norm(pred_np - gt):.4f}")
 
-# 4. Test: CON normalizacion manual (deberia dar error < 0.3 si esta es la causa)
 print("\n=== CON normalizacion manual (el fix) ===")
 errors = []
 for i in [0, 10, 30, 50, 100, 200, 400]:
@@ -73,7 +68,6 @@ for i in [0, 10, 30, 50, 100, 200, 400]:
     cab   = item["observation.images.cabinet"].unsqueeze(0).to(device).float()
     gt    = item["action"].cpu().numpy()
 
-    # Normalizar manualmente
     state_norm = (state - s_mean) / s_std
     top_norm   = (top - img_mean) / img_std
     cab_norm   = (cab - img_mean) / img_std
@@ -88,7 +82,6 @@ for i in [0, 10, 30, 50, 100, 200, 400]:
         pred_norm = policy.select_action(batch)
     if pred_norm.dim() == 2: pred_norm = pred_norm.squeeze(0)
 
-    # Desnormalizar action manualmente
     pred_raw = (pred_norm.cpu() * a_std.cpu() + a_mean.cpu()).numpy()
 
     err = float(np.linalg.norm(pred_raw - gt))

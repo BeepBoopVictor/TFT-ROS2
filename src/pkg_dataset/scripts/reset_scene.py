@@ -112,12 +112,10 @@ class SceneResetter(Node):
             if self.last_arm_q is not None:
                 break
 
-        # 1. Abrir pinza
         print("[RESET] Abriendo pinza...")
         self.send_hand(GRIP_OPEN, duration=1.0)
         self.spin_some(1.5)
 
-        # 2. Mover brazo a HOME
         print("[RESET] Moviendo brazo a HOME...")
         self.send_arm(HOME, duration=4.0)
         ok = self.wait_arm_home(timeout=15.0)
@@ -127,7 +125,6 @@ class SceneResetter(Node):
             err = float(np.linalg.norm(self.last_arm_q - np.array(HOME))) if self.last_arm_q is not None else -1
             print(f"[RESET][WARN] Brazo no llego a HOME exacto (err={err:.3f}), continuando.")
 
-        # 3. Resetear cubos
         print(f"[RESET] Colocando cubo rojo en {self.args.pick}...")
         cube_ok = self.reset_cubes()
         print(f"[RESET] Cubos reseteados: {cube_ok}")
