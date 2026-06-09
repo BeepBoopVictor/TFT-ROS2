@@ -8,7 +8,7 @@
     curriculum learning, reward functions and policy evaluation.
   </description>
 
-  <maintainer email="victor@example.com">Victor</maintainer>
+  <maintainer email="gbvictor011@protonmail.com">Victor</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""Entorno Gymnasium HER para fase Direct-Grasp del cubo rojo.
-
-Versión definitiva TFG — SO-101 / FP3 en Gazebo Fortress Ignition.
-
-Cambios respecto a versión anterior:
-  - Añadido método `render()` (requerido por gymnasium.Env).
-  - Seguimiento de éxito sostenido (episode_sustained_success_any):
-    N pasos consecutivos dentro del umbral → diagnóstico más estricto para defensa.
-  - `compute_reward` documentado explícitamente para diferenciarlo del HER externo.
-  - Mejor fallback en `_get_obs` cuando la pose TCP no está disponible.
-  - Logging de sustained_success en info de step y done.
-"""
 
 from __future__ import annotations
 
@@ -112,13 +100,11 @@ class FP3DirectGraspRedEnvConfig:
     reach_xy_threshold: float = 0.055
     reach_z_threshold:  float = 0.070
 
-    # Métricas de "grasp ready": cubo centrado entre dedos abiertos.
     finger_balance_threshold:       float = 0.026
     finger_max_distance_threshold:  float = 0.125
     require_finger_success:         bool  = False
 
-    # Éxito sostenido: cuántos pasos consecutivos dentro del umbral
-    # se consideran "sustained_success" (diagnóstico extra para TFG).
+    # Éxito sostenido: 3 pasos consecutivos dentro del umbral
     sustained_success_steps: int = 3
 
     # Recompensa.
@@ -170,13 +156,7 @@ def set_entity_pose_ign(
     retries: int = 6,
     retry_sleep: float = 0.25,
 ) -> bool:
-    """Teleporta una entidad de Gazebo. Solo en reset, nunca en step.
-
-    En entrenamientos largos Ignition puede responder con:
-      NodeShared::RecvSrvRequest() error sending response: Host unreachable
-    Aunque el servicio a veces se ejecuta, el cliente CLI puede fallar al
-    recibir la respuesta. Se hacen varios intentos antes de declarar fallo.
-    """
+    """Spawnea una entidad de Gazebo. Solo en reset, nunca en step. """
     x, y, z = [float(v) for v in xyz]
     req = (
         f'name: "{entity}", '
@@ -588,7 +568,7 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         self.hand_pub.publish(msg)
 
     def _go_home(self):
-        """Lleva el brazo a HOME interpolando por segmentos para no violar
+        """Lleva el brazo a HOME interpolando por segmentos para no romper
         tolerancias del joint_trajectory_controller.
         """
         self._spin_some(0.10)
@@ -621,7 +601,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
                 self._publish_arm(q_i, duration=dur)
                 self._sleep(dur + 0.06)
 
-        # Hold final corto si estamos cerca de HOME.
         self._spin_some(0.20)
         q_now  = self.last_arm_q.copy() if self.last_arm_q is not None else Q_HOME.copy()
         q_err  = float(np.max(np.abs(q_now - Q_HOME)))
@@ -758,8 +737,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         reward -= self.cfg.action_l2_penalty * float(np.square(action).mean())
         reward -= 0.002 * float(np.linalg.norm(self.momentum_action))
 
-        # Shaping suave de geometría de agarre (no obligatorio para HER,
-        # pero guía la posición relativa de los dedos respecto al cubo).
         fb   = float(metrics.get("finger_balance",               float("nan")))
         fm   = float(metrics.get("finger_mean_distance_to_cube", float("nan")))
         fmid = float(metrics.get("d_cube_finger_mid_xy",         float("nan")))
@@ -781,7 +758,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
             reward += 0.50 * self.cfg.success_bonus
         if metrics["reach_success"] > 0.5:
             reward += self.cfg.success_bonus
-            # Bonus adicional por éxito sostenido (N pasos consecutivos).
             if self.episode_consecutive_success >= self.cfg.sustained_success_steps:
                 reward += 0.25 * self.cfg.success_bonus
 
@@ -839,7 +815,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         ok = True
 
         if self.cfg.hard_reset_world_on_reset:
-            # 1) Desactivar controladores ANTES del reset de modelo.
             if self.cfg.reset_controllers_on_hard_reset:
                 ok_ctrl_off = switch_ros2_controllers(
                     deactivate=["fp3_arm_controller", "fp3_hand_controller"],
@@ -848,15 +823,12 @@ class FP3DirectGraspRedHEREnv(gym.Env):
                 ok = bool(ok and ok_ctrl_off)
                 self._sleep(0.25)
 
-            # 2) Reset model_only: devuelve robot/cubos al estado inicial
-            #    sin reiniciar /clock.
             ok_reset = reset_world_ign(
                 self.cfg.world_name,
                 model_only=self.cfg.hard_reset_model_only,
             )
             ok = bool(ok and ok_reset)
 
-            # 3) Vaciar estados locales obsoletos.
             self.last_arm_q  = None
             self.prev_arm_q  = None
             self.latest_joint_msg = None
@@ -864,7 +836,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
             self.latest_cube_poses.clear()
             self._sleep(self.cfg.hard_reset_settle)
 
-            # 4) Reactivar controladores.
             if self.cfg.reset_controllers_on_hard_reset:
                 ok_ctrl_on = switch_ros2_controllers(
                     activate=["fp3_arm_controller", "fp3_hand_controller"],
@@ -873,7 +844,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
                 ok = bool(ok and ok_ctrl_on)
                 self._sleep(0.50)
 
-            # 5) Esperar estado fresco.
             if not self.wait_ready(
                 timeout=max(5.0, self.cfg.hard_reset_settle + 2.0)
             ):
@@ -882,7 +852,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
                     + json.dumps(self.readiness_report(), indent=2)
                 )
 
-            # 6) Reabrir pinza.
             self._publish_hand_open(duration=0.4)
             if self.cfg.hold_home_after_hard_reset:
                 self._publish_arm(Q_HOME, duration=0.50)
@@ -891,7 +860,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
             if self.cfg.go_home_after_hard_reset:
                 self._go_home()
         else:
-            # Reset clásico: cubo primero, luego HOME por segmentos.
             if self.cfg.teleport_red_on_reset:
                 ok_pre = set_entity_pose_ign(
                     self.cfg.red_entity,
@@ -969,10 +937,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
             "tcp_start_to_goal": self.reset_tcp_start_to_goal,
         }
 
-        # IMPORTANTE para Tianshou 0.5.1:
-        # El Collector asigna info de reset con indexado parcial y no permite
-        # crear claves nuevas. Devolver {} evita el ValueError.
-        # Las métricas útiles siguen en self.last_reset_info.
         return obs, {}
 
     def step(self, action):
@@ -1026,17 +990,15 @@ class FP3DirectGraspRedHEREnv(gym.Env):
             if not self.episode_success_any:
                 self.episode_step_of_first_success = int(self.current_step)
             self.episode_success_any = True
-            # Éxito sostenido: incrementamos contador consecutivo
             self.episode_consecutive_success += 1
             if self.episode_consecutive_success >= self.cfg.sustained_success_steps:
                 self.episode_sustained_success_any = True
         else:
-            self.episode_consecutive_success = 0  # Reset si falla un paso
+            self.episode_consecutive_success = 0  
 
         if metrics.get("grasp_ready_success", 0.0) > 0.5:
             self.episode_grasp_ready_any = True
 
-        # Longitudes de trayectoria
         tcp_now = obs["achieved_goal"].copy()
         if self.prev_tcp_for_path is not None:
             self.episode_tcp_path_length += float(
@@ -1136,7 +1098,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         return reward.astype(np.float32)
 
     def render(self, mode=None):
-        """No hay renderizado interno: Gazebo es el visualizador."""
         pass
 
     def close(self):

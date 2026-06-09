@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""Entorno Gymnasium HER — Grasp-Ready Reaching cubo rojo — v3.
 
-OBJETIVO: El robot debe posicionar la pinza abierta de forma que el cubo
-rojo quede CENTRADO ENTRE LOS DOS DEDOS, preparado para cerrar y agarrar.
-No basta con acercarse: la pinza debe estar alineada sobre el cubo con los
-dedos equidistantes del centroide.
-
-RESET DEFINITIVO (v3): un solo intento de interpolación a HOME. Si falla
-(q_error > tolerancia), se ejecuta reset_world_ign y el robot aparece
-directamente en la posición inicial de Gazebo. Sin reintentos, sin ruido.
-
-BARRERA ARTICULAR (v3): penalización cuadrática + safety margin impiden
-que la política alcance configuraciones extremas que traben el reset.
-"""
 
 from __future__ import annotations
 import json, random, shutil, subprocess, time, uuid
@@ -49,9 +36,7 @@ HAND_OPEN_WIDTH = 0.039; HAND_CLOSED_WIDTH = 0.006
 class FP3DirectGraspRedEnvConfig:
     world_name: str = "fp3_pick_place_world"
     red_entity: str = "red_cube"
-    # Offset TCP sobre el cubo: la pinza debe estar centrada sobre el cubo
-    # con los dedos a cada lado. Este offset define dónde debe estar el TCP
-    # para que el cubo quede entre los dedos.
+
     reach_offset_xyz: Tuple[float,float,float] = (0.0, 0.0, 0.045)
     teleport_red_on_reset: bool = False
     fixed_red_xyz: Tuple[float,float,float] = (0.40, 0.18, 0.22)
@@ -269,7 +254,7 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         msg.points = [pt]; self.hand_pub.publish(msg)
 
     # ═════════════════════════════════════════════════════════════════════════
-    # RESET DEFINITIVO: un intento → si falla → hard reset Gazebo
+    # RESET DEFINITIVO
     # ═════════════════════════════════════════════════════════════════════════
 
     def _force_home_hard_reset(self):
@@ -278,32 +263,26 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         print(f"[reset] Hard reset Gazebo (#{self._emergency_hard_resets}): "
               f"el robot no llegó a HOME, reseteando simulación...")
 
-        # 1. Desactivar controladores (evita goals activos residuales)
         switch_ros2_controllers(
             deactivate=["fp3_arm_controller","fp3_hand_controller"],
             timeout=self.cfg.controller_switch_timeout)
         self._sleep(0.3)
 
-        # 2. Reset mundo (model_only=True): el robot vuelve a la pose del URDF
         reset_world_ign(self.cfg.world_name, model_only=True)
 
-        # 3. Limpiar todo el estado local (ya no es válido)
         self.last_arm_q = None; self.prev_arm_q = None
         self.latest_joint_msg = None; self.last_dq[:] = 0.0
         self.latest_cube_poses.clear()
         self._sleep(max(1.5, self.cfg.hard_reset_settle))
 
-        # 4. Reactivar controladores
         switch_ros2_controllers(
             activate=["fp3_arm_controller","fp3_hand_controller"],
             timeout=self.cfg.controller_switch_timeout)
         self._sleep(0.5)
 
-        # 5. Esperar sensores frescos
         if not self.wait_ready(timeout=5.0):
             print("[reset] WARN: sensores no vuelven tras hard reset")
 
-        # 6. Enviar HOME explícito + abrir pinza
         self._pub_arm(Q_HOME, dur=0.50)
         self._pub_hand_open(dur=0.4)
         self._sleep(0.70)
@@ -319,7 +298,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         max_abs = float(np.max(np.abs(diff)))
 
         if max_abs > float(self.cfg.reset_home_tolerance):
-            # Interpolación por segmentos (un solo intento)
             step = max(0.05, float(self.cfg.reset_max_joint_step))
             n_seg = max(1, min(int(np.ceil(max_abs / step)), 20))
             dur = max(0.15, float(self.cfg.reset_segment_duration))
@@ -328,18 +306,15 @@ class FP3DirectGraspRedHEREnv(gym.Env):
                 self._pub_arm(q_start + (float(i)/n_seg) * diff, dur=dur)
                 self._sleep(dur + 0.06)
 
-        # Comprobar resultado
         self._spin(0.20)
         q_now = self.last_arm_q.copy() if self.last_arm_q is not None else Q_HOME.copy()
         q_err = float(np.max(np.abs(q_now - Q_HOME)))
 
         if q_err <= max(float(self.cfg.reset_home_tolerance), 0.12):
-            # OK → hold HOME
             self._pub_arm(Q_HOME, dur=0.45)
             self._pub_hand_open(0.4)
             self._sleep(0.55)
         else:
-            # FALLO → hard reset, sin reintentos
             self._force_home_hard_reset()
 
         self.momentum_action[:] = 0.0
@@ -367,7 +342,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         else:
             d_l=d_r=fb=fm=d_cfm=d_cfm_xy=float("nan"); fa = 0.0
 
-        # Grasp-ready: el cubo está centrado entre los dedos
         grs = 0.0
         if fa > 0.5:
             grs = float(d_goal < self.cfg.reach_threshold
@@ -417,17 +391,13 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         d_z = metrics["d_tcp_reach_goal_z_abs"]
 
         reward = -self.cfg.time_penalty
-        # Reaching: acercar TCP al goal (cubo + offset)
         reward -= self.cfg.dense_distance_scale * min(d, 0.70)
         reward -= 0.75 * min(d_xy, 0.50)
         reward -= 0.45 * min(d_z, 0.25)
 
-        # Penalización de acción
         reward -= self.cfg.action_l2_penalty * float(np.square(action).mean())
         reward -= 0.002 * float(np.linalg.norm(self.momentum_action))
 
-        # OBJETIVO PRINCIPAL: cubo centrado entre dedos
-        # Estos términos guían la posición relativa de los dedos al cubo.
         fb   = float(metrics.get("finger_balance", float("nan")))
         fm   = float(metrics.get("finger_mean_distance_to_cube", float("nan")))
         fmid = float(metrics.get("d_cube_finger_mid_xy", float("nan")))
@@ -435,7 +405,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         if np.isfinite(fm):   reward -= 0.70 * min(fm,   0.25)
         if np.isfinite(fmid): reward -= 1.10 * min(fmid, 0.20)
 
-        # Progress shaping
         if self.prev_goal_distance is not None:
             reward += self.cfg.progress_bonus_scale * float(np.clip(self.prev_goal_distance-d, -0.05, 0.05))
         self.prev_goal_distance = d
@@ -448,7 +417,6 @@ class FP3DirectGraspRedHEREnv(gym.Env):
             if self.episode_consecutive_success >= self.cfg.sustained_success_steps:
                 reward += 0.25 * self.cfg.success_bonus
 
-        # BARRERA ARTICULAR: penalización cuadrática cerca de límites
         if self.last_arm_q is not None:
             margin = np.minimum(self.last_arm_q - ARM_LOW, ARM_HIGH - self.last_arm_q)
             bz = max(0.01, self.cfg.joint_limit_barrier_zone)
@@ -489,7 +457,7 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         self.last_applied_delta_q[:] = 0.0; self.prev_goal_distance = None
         self.last_q_cmd = None; self._reset_ep()
 
-        # Teleport cubo primero (antes de mover brazo)
+        # Spawnear cubo primero
         ok = True
         if self.cfg.teleport_red_on_reset:
             ok_pre = set_entity_pose_ign(self.cfg.red_entity, self.cfg.fixed_red_xyz, self.cfg.world_name)
@@ -503,7 +471,7 @@ class FP3DirectGraspRedHEREnv(gym.Env):
         # Ir a HOME (con hard reset automático si falla)
         self._go_home()
 
-        # Teleport cubo final (por si go_home hizo hard reset y lo movió)
+        # Swapnear cubo final (por si go_home hizo hard reset y lo movió)
         if self.cfg.teleport_red_on_reset:
             set_entity_pose_ign(self.cfg.red_entity, self.cfg.fixed_red_xyz, self.cfg.world_name)
             self._sleep(self.cfg.settle_after_reset)
