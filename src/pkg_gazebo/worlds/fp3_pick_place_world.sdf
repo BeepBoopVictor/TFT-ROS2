@@ -96,7 +96,7 @@
     </include>
 
     <!-- ===================== -->
-    <!-- Cámara 1: cenital sobre cinta -->
+    <!-- Cámara 1: top -->
     <!-- ===================== -->
 
     <model name="camera_top_conveyor">
@@ -127,7 +127,7 @@
     </model>
 
     <!-- ===================== -->
-    <!-- Cámara 2: final de cinta, perpendicular -->
+    <!-- Cámara 2: frontal -->
     <!-- ===================== -->
 
     <model name="camera_front_conveyor">
@@ -158,7 +158,7 @@
     </model>
 
     <!-- ===================== -->
-    <!-- Cámara 3: vista caballera / tres cuartos -->
+    <!-- Cámara 3: caballera -->
     <!-- ===================== -->
 
     <model name="camera_cabinet">
@@ -187,6 +187,10 @@
         </sensor>
       </link>
     </model>
+
+    <!-- ===================== -->
+    <!-- Cámara 4: top alternativa -->
+    <!-- ===================== -->
 
     <model name="camera_top_model">
       <static>true</static>
