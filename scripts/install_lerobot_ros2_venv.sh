@@ -7,7 +7,7 @@ VENV="${LEROBOT_ROS2_VENV:-/root/lerobot_ros2_venv}"
 PY="/usr/bin/python3"
 
 if [ -d "${VENV}" ]; then
-  echo "[install_lerobot_ros2_venv] ${VENV} ya existe, lo borro para empezar limpio."
+  echo "[install_lerobot_ros2_venv] ${VENV} reinicio."
   rm -rf "${VENV}"
 fi
 
@@ -16,6 +16,7 @@ fi
 source "${VENV}/bin/activate"
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install --no-cache-dir pyzmq
+python -m pip install --no-cache-dir pyarrow
 
 python - <<'PYCHECK'
 import sys, zmq

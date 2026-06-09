@@ -83,19 +83,6 @@ tfg_panda_ws/
 
 ---
 
-## Preparar entorno general
-
-Antes de ejecutar cualquier componente del proyecto, debe cargarse el entorno del workspace:
-
-```bash
-cd /root/tfg_panda_ws
-source /root/tfg_panda_ws/tools/env_ros.sh
-```
-
-Este script prepara ROS 2 Humble, Gazebo/Ignition, MoveIt 2 y las variables necesarias para usar los paquetes del proyecto.
-
----
-
 ## Entornos Python
 
 El proyecto utiliza varios entornos Python porque ROS 2, LeRobot y Tianshou no comparten siempre las mismas versiones de Python y dependencias.
